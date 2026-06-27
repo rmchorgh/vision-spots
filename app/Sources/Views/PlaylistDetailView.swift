@@ -33,11 +33,18 @@ struct PlaylistDetailView: View {
 
     private var header: some View {
         HStack(alignment: .bottom, spacing: 24) {
-            ArtworkView(url: playlist.artworkURL)
-                .frame(width: 200, height: 200)
-                .shadow(radius: 12, y: 8)
+            Group {
+                if playlist.isLikedSongs {
+                    LikedSongsArtwork(heartFont: .system(size: 56))
+                } else {
+                    ArtworkView(url: playlist.artworkURL)
+                }
+            }
+            .frame(width: 200, height: 200)
+            .shadow(radius: 12, y: 8)
             VStack(alignment: .leading, spacing: 10) {
-                Text("Playlist").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(playlist.isLikedSongs ? "Playlist · Liked Songs" : "Playlist")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text(playlist.name).font(.extraLargeTitle2.weight(.bold))
                 Text(playlist.description).font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 Text("\(playlist.ownerName) · \(playlist.trackCount) tracks")

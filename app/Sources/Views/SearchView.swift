@@ -50,21 +50,14 @@ struct SearchView: View {
             if !results.playlists.isEmpty {
                 Text("Playlists").font(.title2.weight(.bold))
                 LazyVGrid(columns: columns, spacing: 18) {
-                    ForEach(results.playlists) { playlist in
-                        NavigationLink(value: playlist) {
-                            CardView(title: playlist.name, subtitle: "\(playlist.trackCount) tracks", artworkURL: playlist.artworkURL)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    ForEach(results.playlists) { MediaCard(item: .playlist($0)) }
                 }
             }
 
             if !results.albums.isEmpty {
                 Text("Albums").font(.title2.weight(.bold))
                 LazyVGrid(columns: columns, spacing: 18) {
-                    ForEach(results.albums) { album in
-                        CardView(title: album.name, subtitle: album.artistNames, artworkURL: album.artworkURL)
-                    }
+                    ForEach(results.albums) { MediaCard(item: .album($0)) }
                 }
             }
         }
