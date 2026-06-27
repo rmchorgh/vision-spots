@@ -48,7 +48,9 @@ struct DeviceList: View {
                 .buttonStyle(.plain)
             }
         }
+        .padding(.top, 24)
         .task { await player.loadDevices() }
+        .frame(minHeight: 200, maxHeight: 260)
     }
 
     static func icon(for type: String) -> String {
