@@ -29,7 +29,6 @@ struct HomeView: View {
                 content
             }
         }
-        .padding(.bottom, 96)
         .navigationTitle("Home")
         .task { await load() }
     }
@@ -63,6 +62,7 @@ struct HomeView: View {
             }
         }
         .padding(28)
+        .padding(.bottom, 96)
     }
 
     private func load() async {
