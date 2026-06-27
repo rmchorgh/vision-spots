@@ -28,6 +28,7 @@ struct SearchView: View {
             }
         }
         .navigationTitle("Search")
+        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Songs, albums, playlists")
         .onChange(of: query) { _, newValue in scheduleSearch(newValue) }
     }

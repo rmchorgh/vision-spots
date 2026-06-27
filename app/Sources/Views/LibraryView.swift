@@ -26,6 +26,7 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Library")
+        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
 
