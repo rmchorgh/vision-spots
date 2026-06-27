@@ -66,6 +66,36 @@ token. Example: `GET /api/spotify/me/playlists?limit=50`. Keeps the access token
 device and centralizes refresh-on-401. The `spotify-connection` agent decides whether to
 use this generic proxy or add typed endpoints (`/api/playlists`, `/api/search`, …).
 
+### `GET /api/playlists/:playlist_id/tracks`  *(Bearer session)*
+Paginated playlist track listing. Wraps Spotify's `GET /v1/playlists/{id}/items` so the
+app never needs raw Spotify tokens and doesn't have to deal with cursor construction.
+
+Query params:
+- `limit` — items per page, 1–100, default 50
+- `offset` — zero-based start index, default 0
+
+```json
+200 → {
+  "items": [
+    {
+      "track_id":    "spotify:track:...",
+      "name":        "Song Title",
+      "artist":      "Artist Name",
+      "album":       "Album Name",
+      "duration_ms": 210000,
+      "image":       "https://..."
+    }
+  ],
+  "total":  250,
+  "limit":  50,
+  "offset": 0,
+  "next_offset": 50
+}
+```
+
+`next_offset` is `null` when the caller has reached the last page (`offset + len(items) >= total`).
+The app pages by incrementing `offset` by `limit` until `next_offset` is `null`.
+
 ### Playback control (Spotify Connect) *(Bearer session)*
 Thin proxies over Spotify's player API:
 - `GET  /api/player/devices`          → list Connect devices

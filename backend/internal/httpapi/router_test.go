@@ -62,10 +62,18 @@ func TestRouter_PublicEndpoints(t *testing.T) {
 			t.Errorf("state should not be empty")
 		}
 
-		// Ensure state and verifier were stashed in the store
+		// State must be independently random — not a prefix of the verifier.
 		verifier, ok := store.GetVerifier(state)
 		if !ok || verifier == "" {
 			t.Errorf("expected state and verifier to be stored")
+		}
+		// State and verifier should be distinct values.
+		if strings.HasPrefix(verifier, strings.TrimPrefix(state, "st_")) {
+			t.Errorf("state appears to be derived from verifier — should be independent")
+		}
+		// Scope must be percent-encoded in the URL (spaces become + or %20).
+		if strings.Contains(authURL, "scope=user-read-private user-read-email") {
+			t.Errorf("scope contains literal spaces; URL encoding is broken")
 		}
 	})
 }

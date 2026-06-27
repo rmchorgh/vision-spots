@@ -3,10 +3,13 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -16,6 +19,28 @@ import (
 	"github.com/rmchorgh/vision-spots/backend/internal/session"
 	"github.com/rmchorgh/vision-spots/backend/internal/spotify"
 )
+
+// hopByHopHeaders must not be forwarded between HTTP peers per RFC 7230 §6.1.
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailers":            true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+func copyResponseHeaders(dst, src http.Header) {
+	for k, v := range src {
+		if !hopByHopHeaders[k] {
+			for _, val := range v {
+				dst.Add(k, val)
+			}
+		}
+	}
+}
 
 // NewRouter creates the chi router with all endpoints from api-contract.md.
 // Heavily commented so the owner can understand the full OAuth/PKCE/session flow.
@@ -72,21 +97,33 @@ func startAuthHandler(cfg *config.Config, store *session.Store) http.HandlerFunc
 		}
 
 		challenge := pkce.GenerateChallenge(verifier)
-		state := "st_" + verifier[:12]
+
+		// Generate state independently from verifier so an observer of the
+		// redirect URL cannot infer any bits of the PKCE verifier.
+		stateBytes := make([]byte, 16)
+		if _, err := rand.Read(stateBytes); err != nil {
+			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+		state := "st_" + hex.EncodeToString(stateBytes)
 
 		// Store verifier for callback validation (one-time use, short TTL)
 		store.SaveState(state, verifier, 10*time.Minute)
 
-		// Build Spotify authorization URL (exact scopes from shared-constants.md)
-		authURL := "https://accounts.spotify.com/authorize" +
-			"?client_id=" + cfg.SpotifyClientID +
-			"&response_type=code" +
-			"&redirect_uri=" + cfg.SpotifyRedirectURI +
-			"&code_challenge=" + challenge +
-			"&code_challenge_method=S256" +
-			"&state=" + state +
-			"&scope=user-read-private user-read-email user-library-read playlist-read-private " +
-			"user-read-playback-state user-modify-playback-state user-read-currently-playing streaming"
+		// Use url.Values so all parameters are properly percent-encoded,
+		// including redirect_uri (which may contain special chars) and scope
+		// (whose spaces must be encoded to avoid breaking URL parsing on iOS).
+		params := url.Values{}
+		params.Set("client_id", cfg.SpotifyClientID)
+		params.Set("response_type", "code")
+		params.Set("redirect_uri", cfg.SpotifyRedirectURI)
+		params.Set("code_challenge", challenge)
+		params.Set("code_challenge_method", "S256")
+		params.Set("state", state)
+		params.Set("scope", "user-read-private user-read-email user-library-read playlist-read-private "+
+			"user-read-playback-state user-modify-playback-state user-read-currently-playing streaming")
+
+		authURL := "https://accounts.spotify.com/authorize?" + params.Encode()
 
 		writeJSON(w, map[string]string{
 			"authorize_url": authURL,
@@ -312,11 +349,7 @@ func spotifyProxyHandler(cfg *config.Config, store *session.Store) http.HandlerF
 		}
 		defer resp.Body.Close()
 
-		for k, v := range resp.Header {
-			for _, val := range v {
-				w.Header().Add(k, val)
-			}
-		}
+		copyResponseHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
 	}
@@ -480,12 +513,7 @@ func handlePlayerResponse(w http.ResponseWriter, resp *http.Response) {
 		return
 	}
 
-	// Write OK and copy body
-	for k, v := range resp.Header {
-		for _, val := range v {
-			w.Header().Add(k, val)
-		}
-	}
+	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(http.StatusOK)
 	w.Write(body)
 }
