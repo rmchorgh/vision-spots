@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,155 @@ func TestRouter_PublicEndpoints(t *testing.T) {
 		// Scope must be percent-encoded in the URL (spaces become + or %%20).
 		if strings.Contains(authURL, "scope=user-read-private user-read-email") {
 			t.Errorf("scope contains literal spaces; URL encoding is broken")
+		}
+	})
+}
+
+func TestPlaylistTracksHandler(t *testing.T) {
+	mockSpotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/playlists/pl123/items" {
+			limit := 50
+			offset := 0
+			if v := r.URL.Query().Get("limit"); v != "" {
+				limit, _ = strconv.Atoi(v)
+			}
+			if v := r.URL.Query().Get("offset"); v != "" {
+				offset, _ = strconv.Atoi(v)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"total":  3,
+				"limit":  limit,
+				"offset": offset,
+				"items": []map[string]any{
+					{
+						"track": map[string]any{
+							"uri":         "spotify:track:abc",
+							"name":        "Song One",
+							"duration_ms": 180000,
+							"artists":     []map[string]any{{"name": "Artist A"}},
+							"album": map[string]any{
+								"name":   "Album X",
+								"images": []map[string]any{{"url": "https://img/1"}},
+							},
+						},
+					},
+					{
+						"track": nil, // local file or removed track — should be skipped
+					},
+					{
+						"track": map[string]any{
+							"uri":         "spotify:track:def",
+							"name":        "Song Two",
+							"duration_ms": 240000,
+							"artists":     []map[string]any{{"name": "Artist B"}},
+							"album": map[string]any{
+								"name":   "Album Y",
+								"images": []map[string]any{{"url": "https://img/2"}},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockSpotify.Close()
+
+	oldAPIBaseURL := spotify.APIBaseURL
+	spotify.APIBaseURL = mockSpotify.URL
+	defer func() { spotify.APIBaseURL = oldAPIBaseURL }()
+
+	cfg := &config.Config{
+		SpotifyClientID:     "mock_client_id",
+		SpotifyClientSecret: "mock_client_secret",
+		SpotifyRedirectURI:  "https://vision-spots.richardmch.org/callback",
+		SessionSigningKey:   "signing_key_32_bytes_long_string_for_testing!",
+	}
+	store := session.NewStore()
+	router := NewRouter(cfg, store)
+
+	sessionID := "tracks_session"
+	store.SaveTokens(sessionID, session.SpotifyTokens{
+		AccessToken:  "valid_token",
+		RefreshToken: "refresh_token",
+		ExpiresAt:    time.Now().Add(1 * time.Hour),
+	})
+	jwtToken, err := session.MintToken(cfg.SessionSigningKey, sessionID, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("failed to mint token: %v", err)
+	}
+
+	t.Run("returns tracks with next_offset", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/playlists/pl123/tracks?limit=2&offset=0", nil)
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var resp struct {
+			Items []struct {
+				TrackID    string `json:"track_id"`
+				Name       string `json:"name"`
+				Artist     string `json:"artist"`
+				Album      string `json:"album"`
+				DurationMS int    `json:"duration_ms"`
+				Image      string `json:"image"`
+			} `json:"items"`
+			Total      int  `json:"total"`
+			Limit      int  `json:"limit"`
+			Offset     int  `json:"offset"`
+			NextOffset *int `json:"next_offset"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		// null-track entry must be stripped
+		if len(resp.Items) != 2 {
+			t.Fatalf("expected 2 items (null stripped), got %d", len(resp.Items))
+		}
+		if resp.Items[0].TrackID != "spotify:track:abc" {
+			t.Errorf("unexpected track_id: %s", resp.Items[0].TrackID)
+		}
+		if resp.Items[0].Artist != "Artist A" {
+			t.Errorf("unexpected artist: %s", resp.Items[0].Artist)
+		}
+		if resp.Total != 3 {
+			t.Errorf("expected total 3, got %d", resp.Total)
+		}
+		// 0 + 2 items < total 3, so next_offset should be non-nil
+		if resp.NextOffset == nil {
+			t.Fatal("expected next_offset to be set")
+		}
+		if *resp.NextOffset != 2 {
+			t.Errorf("expected next_offset 2, got %d", *resp.NextOffset)
+		}
+	})
+
+	t.Run("invalid limit rejected", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/playlists/pl123/tracks?limit=999", nil)
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("requires auth", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/playlists/pl123/tracks", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", w.Code)
 		}
 	})
 }
