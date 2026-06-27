@@ -29,6 +29,7 @@ struct HomeView: View {
                 content
             }
         }
+        .padding(.bottom, 96)
         .navigationTitle("Home")
         .task { await load() }
     }

@@ -39,24 +39,39 @@ struct MediaCard: View {
     }
 
     private func cardBody(artworkURL: URL?, likedSongs: Bool, title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        ZStack(alignment: .bottomLeading) {
             Group {
                 if likedSongs {
-                    LikedSongsArtwork()
+                    LikedSongsArtwork(cornerRadius: 0)
                 } else {
-                    ArtworkView(url: artworkURL)
+                    ArtworkView(url: artworkURL, cornerRadius: 0)
                 }
             }
-            .aspectRatio(1, contentMode: .fit)
-            .shadow(radius: 8, y: 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline).lineLimit(1)
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.25), .black.opacity(0.85)],
+                           startPoint: .top, endPoint: .bottom)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
             }
+            .shadow(color: .black.opacity(0.6), radius: 4, y: 1)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(radius: 8, y: 4)
         .hoverEffect()
     }
 }
