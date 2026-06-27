@@ -1,25 +1,36 @@
 import SwiftUI
 
-// MARK: - Main app shell: sidebar + detail, with a Now Playing ornament
+// MARK: - Main app shell: adaptable sidebar + a Now Playing ornament
+//
+// Uses the visionOS `.sidebarAdaptable` TabView style — the floating glass sidebar (Home,
+// Playlists, Library, Search, Settings) seen in Apple Music for Vision Pro.
 
 struct MainView: View {
-    @Environment(AppModel.self) private var appModel
     @Environment(PlayerModel.self) private var player
 
-    enum Tab: Hashable { case library, search }
+    enum Screen: Hashable { case home, playlists, library, search, settings }
 
-    @State private var selection: Tab? = .library
-    @State private var path = NavigationPath()
+    @State private var selection: Screen = .home
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            NavigationStack(path: $path) {
-                detail
-                    .navigationDestination(for: Playlist.self) { PlaylistDetailView(playlist: $0) }
+        TabView(selection: $selection) {
+            Tab("Home", systemImage: "house", value: .home) {
+                stack { HomeView() }
+            }
+            Tab("Playlists", systemImage: "music.note.list", value: .playlists) {
+                stack { PlaylistsView() }
+            }
+            Tab("Library", systemImage: "square.stack", value: .library) {
+                stack { LibraryView() }
+            }
+            Tab("Search", systemImage: "magnifyingglass", value: .search) {
+                stack { SearchView() }
+            }
+            Tab("Settings", systemImage: "gearshape", value: .settings) {
+                stack { SettingsView() }
             }
         }
+        .tabViewStyle(.sidebarAdaptable)
         .ornament(attachmentAnchor: .scene(.bottom)) {
             NowPlayingBar()
                 .padding(.bottom, 12)
@@ -30,38 +41,11 @@ struct MainView: View {
         }
     }
 
-    private var sidebar: some View {
-        List(selection: $selection) {
-            Label("Library", systemImage: "square.stack").tag(Tab.library)
-            Label("Search", systemImage: "magnifyingglass").tag(Tab.search)
-
-            Spacer(minLength: 24)
-
-            Section {
-                HStack(spacing: 12) {
-                    ArtworkView(url: appModel.currentUser?.imageURL, cornerRadius: 18)
-                        .frame(width: 36, height: 36)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(appModel.currentUser?.displayName ?? "—").lineLimit(1)
-                        Text((appModel.currentUser?.isPremium ?? false) ? "Premium" : "Free")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Button(role: .destructive) {
-                    Task { await appModel.signOut() }
-                } label: {
-                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-            }
-        }
-        .navigationTitle("vision-spots")
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        switch selection ?? .library {
-        case .library: LibraryView()
-        case .search:  SearchView()
+    /// Each tab gets its own navigation stack so playlists can push a detail view.
+    private func stack<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        NavigationStack {
+            content()
+                .navigationDestination(for: Playlist.self) { PlaylistDetailView(playlist: $0) }
         }
     }
 }
