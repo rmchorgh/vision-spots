@@ -60,7 +60,7 @@ struct PlaylistDetailView: View {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { idx, track in
                 TrackRow(track: track, index: idx + 1)
                     .onTapGesture { Task { await player.play(contextURI: track.uri) } }
-                if track.id != tracks.last?.id { Divider() }
+                Divider().opacity(track.id == tracks.last?.id ? 0 : 1)
             }
         }
         .padding(16)

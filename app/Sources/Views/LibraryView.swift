@@ -51,7 +51,8 @@ struct LibraryView: View {
             VStack(spacing: 0) {
                 ForEach(recent) { track in
                     TrackRow(track: track)
-                    if track.id != recent.last?.id { Divider() }
+                    // Non-conditional separator (avoids _ConditionalContent inside a ForEach).
+                    Divider().opacity(track.id == recent.last?.id ? 0 : 1)
                 }
             }
             .padding(16)

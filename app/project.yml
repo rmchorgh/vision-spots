@@ -21,6 +21,10 @@ settings:
     # apple-signing fills DEVELOPMENT_TEAM in app/Signing.xcconfig once it exists.
     # Until then the app still builds & runs in the visionOS Simulator (no signing needed).
     CODE_SIGN_STYLE: Automatic
+    # Build the app as a single binary instead of Xcode's split "debug dylib" launcher.
+    # The debug-dylib mode (app runs as <name>.debug.dylib) has produced corrupt opaque-type
+    # metadata → EXC_BAD_ACCESS in swift_getOpaqueTypeMetadata during SwiftUI updates. Off = stable.
+    ENABLE_DEBUG_DYLIB: NO
 
 configFiles:
   Debug: Signing.xcconfig

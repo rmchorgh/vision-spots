@@ -40,7 +40,7 @@ struct SearchView: View {
                     ForEach(results.tracks) { track in
                         TrackRow(track: track)
                             .onTapGesture { Task { await player.play(contextURI: track.uri) } }
-                        if track.id != results.tracks.last?.id { Divider() }
+                        Divider().opacity(track.id == results.tracks.last?.id ? 0 : 1)
                     }
                 }
                 .padding(16)
