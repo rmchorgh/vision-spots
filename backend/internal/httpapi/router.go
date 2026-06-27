@@ -47,6 +47,10 @@ func NewRouter(cfg *config.Config, store *session.Store) *chi.Mux {
 
 	r.Get("/healthz", healthHandler)
 
+	if cfg.DebugSpotifyToken != "" {
+		r.Post("/debug/mint-session", debugMintSessionHandler(cfg, store))
+	}
+
 	r.Get("/auth/start", startAuthHandler(cfg, store))
 	r.Get("/callback", callbackHandler(cfg, store))
 
@@ -111,8 +115,8 @@ func startAuthHandler(cfg *config.Config, store *session.Store) http.HandlerFunc
 		params.Set("code_challenge", challenge)
 		params.Set("code_challenge_method", "S256")
 		params.Set("state", state)
-		params.Set("scope", "user-read-private user-read-email user-library-read playlist-read-private "+
-			"user-read-playback-state user-modify-playback-state user-read-currently-playing streaming")
+		params.Set("scope", "user-read-private user-read-email user-library-read user-library-modify playlist-read-private "+
+			"user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played streaming")
 
 		authURL := "https://accounts.spotify.com/authorize?" + params.Encode()
 
@@ -213,6 +217,9 @@ func executeSpotifyRequest(cfg *config.Config, store *session.Store, sessionID s
 		return nil, fmt.Errorf("session tokens not found")
 	}
 	if current.AccessToken == tokens.AccessToken {
+		if current.RefreshToken == "" {
+			return nil, fmt.Errorf("spotify token expired and no refresh token is available (debug session?)")
+		}
 		tr, err := spotify.RefreshToken(cfg, current.RefreshToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to refresh token: %w", err)
@@ -784,6 +791,33 @@ func sessionMiddleware(cfg *config.Config, store *session.Store) func(http.Handl
 			ctx := context.WithValue(r.Context(), sessionIDKey, sessionID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+// debugMintSessionHandler creates a session from DEBUG_SPOTIFY_TOKEN and returns a signed
+// JWT. Only registered when DEBUG_SPOTIFY_TOKEN is set — never compiled out, but a no-op
+// in production where the env var is absent.
+func debugMintSessionHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID, err := session.GenerateSessionID()
+		if err != nil {
+			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		store.SaveTokens(sessionID, session.SpotifyTokens{
+			AccessToken:  cfg.DebugSpotifyToken,
+			RefreshToken: "",
+			ExpiresAt:    time.Now().Add(1 * time.Hour),
+		})
+
+		jwtToken, err := session.MintToken(cfg.SessionSigningKey, sessionID, 1*time.Hour)
+		if err != nil {
+			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		writeJSON(w, map[string]string{"session": jwtToken})
 	}
 }
 

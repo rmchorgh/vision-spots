@@ -16,6 +16,7 @@ type Config struct {
 	SpotifyRedirectURI  string
 	SessionSigningKey   string
 	AllowedOrigin       string
+	DebugSpotifyToken   string // non-empty enables POST /debug/mint-session
 }
 
 // Load reads environment variables and validates required fields.
@@ -26,6 +27,7 @@ func Load() (*Config, error) {
 		SpotifyRedirectURI:  os.Getenv("SPOTIFY_REDIRECT_URI"),
 		SessionSigningKey:   os.Getenv("SESSION_SIGNING_KEY"),
 		AllowedOrigin:       os.Getenv("ALLOWED_ORIGIN"),
+		DebugSpotifyToken:   os.Getenv("DEBUG_SPOTIFY_TOKEN"),
 	}
 
 	portStr := os.Getenv("PORT")
