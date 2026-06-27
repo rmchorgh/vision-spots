@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,13 +74,13 @@ func TestPlaylistTracksHandler(t *testing.T) {
 	// Mock Spotify server that serves playlist items
 	mockSpotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/playlists/pl123/items" {
-			limit := r.URL.Query().Get("limit")
-			offset := r.URL.Query().Get("offset")
-			if limit == "" {
-				limit = "50"
+			limit := 50
+			offset := 0
+			if v := r.URL.Query().Get("limit"); v != "" {
+				limit, _ = strconv.Atoi(v)
 			}
-			if offset == "" {
-				offset = "0"
+			if v := r.URL.Query().Get("offset"); v != "" {
+				offset, _ = strconv.Atoi(v)
 			}
 
 			w.Header().Set("Content-Type", "application/json")
