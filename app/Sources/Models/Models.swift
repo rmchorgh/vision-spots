@@ -48,6 +48,13 @@ struct Playlist: Identifiable, Hashable {
     let artworkURL: URL?
 
     var uri: String { "spotify:playlist:\(id)" }
+
+    /// Well-known ids for the two "special" playlists the Home screen treats differently.
+    static let likedSongsID = "liked-songs"
+    static let daylistID = "daylist"
+
+    var isLikedSongs: Bool { id == Self.likedSongsID }
+    var isDaylist: Bool { id == Self.daylistID }
 }
 
 struct Album: Identifiable, Hashable {
@@ -67,7 +74,7 @@ struct Device: Identifiable, Hashable {
     let name: String
     let type: String
     let isActive: Bool
-    let volumePercent: Int?
+    var volumePercent: Int?
 }
 
 /// Snapshot of what's playing on the active Connect device.
@@ -78,6 +85,20 @@ struct PlaybackState: Hashable {
     var progressMs: Int
 
     static let idle = PlaybackState(isPlaying: false, track: nil, device: nil, progressMs: 0)
+}
+
+/// A browsable library item — either an album or a playlist. Used by the Home grid so albums
+/// and playlists can share one "recently played" row and one reusable card component.
+enum MediaItem: Identifiable, Hashable {
+    case album(Album)
+    case playlist(Playlist)
+
+    var id: String {
+        switch self {
+        case .album(let a):    return "album:\(a.id)"
+        case .playlist(let p): return "playlist:\(p.id)"
+        }
+    }
 }
 
 struct SearchResults: Hashable {

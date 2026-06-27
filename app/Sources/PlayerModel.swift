@@ -57,6 +57,23 @@ final class PlayerModel {
         catch { handle(error) }
     }
 
+    /// Is there an active Connect device we can show a volume bar for?
+    var hasDevice: Bool { state.device != nil }
+
+    /// Current device volume (0–100), defaulting to 50 when unknown.
+    var volume: Int { state.device?.volumePercent ?? 50 }
+
+    /// Sets the active device volume. Updates local state optimistically so the slider stays
+    /// responsive, then tells the backend.
+    func setVolume(_ percent: Int) async {
+        let clamped = min(100, max(0, percent))
+        state.device?.volumePercent = clamped
+        if let i = devices.firstIndex(where: { $0.isActive }) {
+            devices[i].volumePercent = clamped
+        }
+        do { try await service.setVolume(percent: clamped) } catch { handle(error) }
+    }
+
     private func handle(_ error: Error) {
         errorMessage = (error as? SpotifyError)?.errorDescription ?? error.localizedDescription
     }
