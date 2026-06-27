@@ -39,40 +39,42 @@ struct MediaCard: View {
     }
 
     private func cardBody(artworkURL: URL?, likedSongs: Bool, title: String, subtitle: String) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            Group {
-                if likedSongs {
-                    LikedSongsArtwork(cornerRadius: 0)
-                } else {
-                    ArtworkView(url: artworkURL, cornerRadius: 0)
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                ZStack(alignment: .bottomLeading) {
+                    Group {
+                        if likedSongs {
+                            LikedSongsArtwork(cornerRadius: 0)
+                        } else {
+                            ArtworkView(url: artworkURL, cornerRadius: 0)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.25), .black.opacity(0.85)],
+                                   startPoint: .top, endPoint: .bottom)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                        if !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                    }
+                    .shadow(color: .black.opacity(0.6), radius: 4, y: 1)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-
-            LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.25), .black.opacity(0.85)],
-                           startPoint: .top, endPoint: .bottom)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(1)
-                }
-            }
-            .shadow(color: .black.opacity(0.6), radius: 4, y: 1)
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(radius: 8, y: 4)
-        .hoverEffect()
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(radius: 8, y: 4)
+            .hoverEffect()
     }
 }
 

@@ -6,14 +6,17 @@ struct RootView: View {
     @Environment(AppModel.self) private var appModel
 
     var body: some View {
-        switch appModel.authState {
-        case .signedOut, .failed:
-            ConnectView()
-        case .connecting:
-            ProgressView("Connecting to Spotify…")
-                .controlSize(.large)
-        case .signedIn:
-            MainView()
+        Group {
+            switch appModel.authState {
+            case .signedOut, .failed:
+                ConnectView()
+            case .connecting:
+                ProgressView("Connecting to Spotify…")
+                    .controlSize(.large)
+            case .signedIn:
+                MainView()
+            }
         }
+        .task { await appModel.bootstrap() }
     }
 }

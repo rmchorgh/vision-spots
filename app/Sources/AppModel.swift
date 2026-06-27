@@ -21,9 +21,26 @@ final class AppModel {
 
     let service: any SpotifyService
     private let auth = AuthController()
+    private let sessionStore: KeychainStore
 
-    init(service: any SpotifyService = AppConfig.makeService()) {
+    init(service: any SpotifyService = AppConfig.makeService(),
+         sessionStore: KeychainStore = .shared) {
         self.service = service
+        self.sessionStore = sessionStore
+    }
+
+    /// Called at launch to silently restore a prior session from the Keychain.
+    func bootstrap() async {
+        guard AppConfig.useLiveBackend else { return }
+        guard await sessionStore.isSignedIn else { return }
+        authState = .connecting
+        do {
+            let profile = try await service.me()
+            authState = .signedIn(profile)
+        } catch {
+            // Token is stale or backend unreachable — fall back to sign-in screen.
+            authState = .signedOut
+        }
     }
 
     /// Connect to Spotify. In Live mode this runs the real OAuth flow; in Mock mode it skips
