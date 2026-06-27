@@ -1,0 +1,184 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rmchorgh/vision-spots/backend/internal/config"
+	"github.com/rmchorgh/vision-spots/backend/internal/session"
+	"github.com/rmchorgh/vision-spots/backend/internal/spotify"
+)
+
+func TestRouter_PublicEndpoints(t *testing.T) {
+	cfg := &config.Config{
+		SpotifyClientID:     "mock_client_id",
+		SpotifyClientSecret: "mock_client_secret",
+		SpotifyRedirectURI:  "https://vision-spots.richardmch.org/callback",
+		SessionSigningKey:   "signing_key_32_bytes_long_string_for_testing!",
+		AllowedOrigin:       "visionspots://callback",
+	}
+	store := session.NewStore()
+	router := NewRouter(cfg, store)
+
+	t.Run("GET /healthz", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/healthz", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+		if w.Body.String() != "ok" {
+			t.Errorf("expected ok, got %q", w.Body.String())
+		}
+	})
+
+	t.Run("GET /auth/start", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/auth/start", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var resp map[string]string
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		authURL := resp["authorize_url"]
+		state := resp["state"]
+
+		if !strings.HasPrefix(authURL, "https://accounts.spotify.com/authorize") {
+			t.Errorf("unexpected authorize_url prefix: %s", authURL)
+		}
+		if state == "" {
+			t.Errorf("state should not be empty")
+		}
+
+		// Ensure state and verifier were stashed in the store
+		verifier, ok := store.GetVerifier(state)
+		if !ok || verifier == "" {
+			t.Errorf("expected state and verifier to be stored")
+		}
+	})
+}
+
+func TestRouter_AuthenticatedAndRefresh(t *testing.T) {
+	// Start a mock Spotify server
+	var callCount int
+	mockSpotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/token" {
+			// Token refresh or exchange endpoint
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "new_refreshed_token",
+				"refresh_token": "still_the_same_refresh_token",
+				"expires_in":    3600,
+				"token_type":    "Bearer",
+			})
+			return
+		}
+
+		if r.URL.Path == "/v1/me" {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "Bearer old_expired_token" && callCount == 0 {
+				callCount++
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error": {"status": 401, "message": "The access token expired"}}`))
+				return
+			}
+
+			if authHeader == "Bearer new_refreshed_token" {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"id":           "spotify_user_123",
+					"display_name": "Mock User",
+					"product":      "premium",
+					"images": []map[string]any{
+						{"url": "https://image.url"},
+					},
+				})
+				return
+			}
+
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("invalid token"))
+		}
+	}))
+	defer mockSpotify.Close()
+
+	// Override Spotify AccountsBaseURL and APIBaseURL to point to our mock server
+	oldAccountsURL := spotify.AccountsBaseURL
+	spotify.AccountsBaseURL = mockSpotify.URL
+	oldAPIBaseURL := spotify.APIBaseURL
+	spotify.APIBaseURL = mockSpotify.URL
+	defer func() { 
+		spotify.AccountsBaseURL = oldAccountsURL 
+		spotify.APIBaseURL = oldAPIBaseURL
+	}()
+
+	cfg := &config.Config{
+		SpotifyClientID:     "mock_client_id",
+		SpotifyClientSecret: "mock_client_secret",
+		SpotifyRedirectURI:  "https://vision-spots.richardmch.org/callback",
+		SessionSigningKey:   "signing_key_32_bytes_long_string_for_testing!",
+		AllowedOrigin:       "visionspots://callback",
+	}
+	store := session.NewStore()
+	router := NewRouter(cfg, store)
+
+	// Create a mock active session in store with an expired/expiring/unauthorized token
+	sessionID := "test_session_id"
+	store.SaveTokens(sessionID, session.SpotifyTokens{
+		AccessToken:  "old_expired_token",
+		RefreshToken: "some_refresh_token",
+		ExpiresAt:    time.Now().Add(-1 * time.Hour), // already expired
+	})
+
+	// Mint a valid session JWT
+	jwtToken, err := session.MintToken(cfg.SessionSigningKey, sessionID, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("failed to mint token: %v", err)
+	}
+
+	t.Run("GET /me with 401 Auto-Refresh", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/me", nil)
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var meResp map[string]string
+		if err := json.NewDecoder(w.Body).Decode(&meResp); err != nil {
+			t.Fatalf("failed to parse /me response: %v", err)
+		}
+
+		if meResp["id"] != "spotify_user_123" {
+			t.Errorf("expected id %q, got %q", "spotify_user_123", meResp["id"])
+		}
+		if meResp["display_name"] != "Mock User" {
+			t.Errorf("expected display_name %q, got %q", "Mock User", meResp["display_name"])
+		}
+		if meResp["image"] != "https://image.url" {
+			t.Errorf("expected image %q, got %q", "https://image.url", meResp["image"])
+		}
+
+		// Verify that the tokens were updated/saved in the store
+		updatedTokens, ok := store.GetTokens(sessionID)
+		if !ok {
+			t.Fatalf("tokens not found in store")
+		}
+		if updatedTokens.AccessToken != "new_refreshed_token" {
+			t.Errorf("expected AccessToken to be updated to %q, got %q", "new_refreshed_token", updatedTokens.AccessToken)
+		}
+	})
+}
