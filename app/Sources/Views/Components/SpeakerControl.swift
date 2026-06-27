@@ -36,7 +36,7 @@ private struct VolumePopover: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
                 if let device = player.state.device {
                     Label(device.name, systemImage: DeviceList.icon(for: device.type))
                         .font(.headline)
@@ -59,9 +59,8 @@ private struct VolumePopover: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
             }
-            .padding(24)
+            .padding(16)
         }
         .onAppear { volume = Double(player.volume) }
     }
