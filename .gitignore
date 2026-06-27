@@ -15,6 +15,8 @@ backend/config.local.*
 *.out
 
 # Xcode / visionOS
+# The .xcodeproj is generated from app/project.yml — run app/regen.sh to recreate it.
+/app/*.xcodeproj/
 /app/build/
 /app/DerivedData/
 *.xcuserstate
