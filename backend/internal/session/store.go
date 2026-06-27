@@ -16,11 +16,12 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Store is v1 in-memory implementation. Thread-safe with a mutex.
+// Store is the v1 in-memory implementation. Thread-safe with a mutex.
 type Store struct {
-	mu       sync.RWMutex
-	states   map[string]StateEntry
-	sessions map[string]SpotifyTokens
+	mu         sync.RWMutex
+	states     map[string]StateEntry
+	sessions   map[string]SpotifyTokens
+	refreshMus sync.Map // map[sessionID]*sync.Mutex — one mutex per session for token refresh
 }
 
 // StateEntry holds the PKCE verifier tied to a state parameter with TTL.
@@ -43,7 +44,6 @@ func NewStore() *Store {
 }
 
 // SaveState stores the PKCE verifier for a given state with a short TTL.
-// Called by /auth/start.
 func (s *Store) SaveState(state, verifier string, ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -78,6 +78,14 @@ func (s *Store) GetTokens(sessionID string) (SpotifyTokens, bool) {
 	defer s.mu.RUnlock()
 	t, ok := s.sessions[sessionID]
 	return t, ok
+}
+
+// RefreshLock returns the per-session mutex used to serialize token refresh calls.
+// Concurrent requests that both receive a 401 should acquire this lock before
+// calling the Spotify token endpoint, so only one goroutine actually refreshes.
+func (s *Store) RefreshLock(sessionID string) *sync.Mutex {
+	mu, _ := s.refreshMus.LoadOrStore(sessionID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // GenerateSessionID generates a cryptographically secure random session ID.

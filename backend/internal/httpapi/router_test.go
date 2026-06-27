@@ -60,21 +60,27 @@ func TestRouter_PublicEndpoints(t *testing.T) {
 		if state == "" {
 			t.Errorf("state should not be empty")
 		}
-
-		// Ensure state and verifier were stashed in the store
+		// State must be independently random — not a prefix of the verifier.
+		// Verify the state is stored and retrievable (it's a separate random value).
 		verifier, ok := store.GetVerifier(state)
 		if !ok || verifier == "" {
 			t.Errorf("expected state and verifier to be stored")
+		}
+		// State and verifier should be distinct values.
+		if strings.HasPrefix(verifier, strings.TrimPrefix(state, "st_")) {
+			t.Errorf("state appears to be derived from verifier — should be independent")
+		}
+		// Scope must be percent-encoded in the URL (spaces become + or %%20).
+		if strings.Contains(authURL, "scope=user-read-private user-read-email") {
+			t.Errorf("scope contains literal spaces; URL encoding is broken")
 		}
 	})
 }
 
 func TestRouter_AuthenticatedAndRefresh(t *testing.T) {
-	// Start a mock Spotify server
 	var callCount int
 	mockSpotify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/token" {
-			// Token refresh or exchange endpoint
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"access_token":  "new_refreshed_token",
@@ -113,13 +119,12 @@ func TestRouter_AuthenticatedAndRefresh(t *testing.T) {
 	}))
 	defer mockSpotify.Close()
 
-	// Override Spotify AccountsBaseURL and APIBaseURL to point to our mock server
 	oldAccountsURL := spotify.AccountsBaseURL
 	spotify.AccountsBaseURL = mockSpotify.URL
 	oldAPIBaseURL := spotify.APIBaseURL
 	spotify.APIBaseURL = mockSpotify.URL
-	defer func() { 
-		spotify.AccountsBaseURL = oldAccountsURL 
+	defer func() {
+		spotify.AccountsBaseURL = oldAccountsURL
 		spotify.APIBaseURL = oldAPIBaseURL
 	}()
 
@@ -133,15 +138,13 @@ func TestRouter_AuthenticatedAndRefresh(t *testing.T) {
 	store := session.NewStore()
 	router := NewRouter(cfg, store)
 
-	// Create a mock active session in store with an expired/expiring/unauthorized token
 	sessionID := "test_session_id"
 	store.SaveTokens(sessionID, session.SpotifyTokens{
 		AccessToken:  "old_expired_token",
 		RefreshToken: "some_refresh_token",
-		ExpiresAt:    time.Now().Add(-1 * time.Hour), // already expired
+		ExpiresAt:    time.Now().Add(-1 * time.Hour),
 	})
 
-	// Mint a valid session JWT
 	jwtToken, err := session.MintToken(cfg.SessionSigningKey, sessionID, 1*time.Hour)
 	if err != nil {
 		t.Fatalf("failed to mint token: %v", err)
@@ -172,7 +175,6 @@ func TestRouter_AuthenticatedAndRefresh(t *testing.T) {
 			t.Errorf("expected image %q, got %q", "https://image.url", meResp["image"])
 		}
 
-		// Verify that the tokens were updated/saved in the store
 		updatedTokens, ok := store.GetTokens(sessionID)
 		if !ok {
 			t.Fatalf("tokens not found in store")
