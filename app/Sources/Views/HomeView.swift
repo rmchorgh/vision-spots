@@ -30,6 +30,7 @@ struct HomeView: View {
             }
         }
         .navigationTitle("Home")
+        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
 

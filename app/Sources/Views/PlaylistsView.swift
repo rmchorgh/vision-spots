@@ -27,6 +27,7 @@ struct PlaylistsView: View {
             }
         }
         .navigationTitle("Playlists")
+        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
 

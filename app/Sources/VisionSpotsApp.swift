@@ -22,8 +22,9 @@ struct VisionSpotsApp: App {
             RootView()
                 .environment(appModel)
                 .environment(player)
-                .frame(minWidth: 900, minHeight: 900)
+                .frame(minWidth: 900, minHeight: 600)
         }
         .defaultSize(width: 1100, height: 760)
+        .windowResizability(.contentMinSize)
     }
 }
