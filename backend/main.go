@@ -7,9 +7,11 @@ import (
 
 	"github.com/rmchorgh/vision-spots/backend/internal/config"
 	"github.com/rmchorgh/vision-spots/backend/internal/httpapi"
+	"github.com/rmchorgh/vision-spots/backend/internal/session"
 )
 
-// X: backend agent - initial main.go skeleton with config and router setup
+// X: backend agent - main entrypoint. Loads config, creates in-memory session store,
+// wires chi router with all endpoints defined in api-contract.md, and starts server.
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -17,15 +19,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	store := session.NewStore()
+
 	fmt.Printf("vision-spots backend starting on :%d...\n", cfg.Port)
+	fmt.Println("X: PKCE + session JWT OAuth broker ready. Endpoints match api-contract.md exactly.")
 
-	// TODO: wire up full router with all endpoints from api-contract.md
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
+	r := httpapi.NewRouter(cfg, store)
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), r); err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
