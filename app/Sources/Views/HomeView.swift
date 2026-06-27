@@ -1,9 +1,10 @@
 import SwiftUI
 
-// MARK: - Home: hero slider + recently played
+// MARK: - Home: daylist + liked songs side-by-side + recently played
 //
-// A paged hero carousel (the current Daylist, then Liked Songs) sits above a grid of the
-// last-played albums and playlists (excluding the daylist and Liked Songs).
+// The two featured playlists (daylist and liked songs) sit side-by-side taking 50% of
+// the available width each. They use the same 380pt min height as the previous hero.
+// Below is the grid of recently played items (excluding daylist and Liked Songs).
 
 struct HomeView: View {
     @Environment(AppModel.self) private var appModel
@@ -34,7 +35,22 @@ struct HomeView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 36) {
-            HeroCarousel(daylist: daylist, liked: liked)
+            HStack(spacing: 24) {
+                if let daylist {
+                    NavigationLink(value: daylist) {
+                        HeroCard(playlist: daylist)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, minHeight: 380)
+                }
+                if let liked {
+                    NavigationLink(value: liked) {
+                        HeroCard(playlist: liked)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, minHeight: 380)
+                }
+            }
 
             if !recent.isEmpty {
                 VStack(alignment: .leading, spacing: 18) {
@@ -62,32 +78,6 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Hero carousel
-
-private struct HeroCarousel: View {
-    let daylist: Playlist?
-    let liked: Playlist?
-
-    @State private var page = 0
-
-    private var pages: [Playlist] { [daylist, liked].compactMap { $0 } }
-
-    var body: some View {
-        TabView(selection: $page) {
-            ForEach(Array(pages.enumerated()), id: \.element.id) { index, playlist in
-                NavigationLink(value: playlist) {
-                    HeroCard(playlist: playlist)
-                }
-                .buttonStyle(.plain)
-                .tag(index)
-                .padding(.bottom, 44)   // leave room for the page dots
-            }
-        }
-        .tabViewStyle(.page(indexDisplayMode: .always))
-        .frame(height: 380)
-    }
-}
-
 private struct HeroCard: View {
     let playlist: Playlist
 
@@ -97,8 +87,6 @@ private struct HeroCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
 
-            // Scrim: a top-down darkening plus a denser pad behind the text for legibility
-            // regardless of the underlying artwork's brightness.
             LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.25), .black.opacity(0.85)],
                            startPoint: .top, endPoint: .bottom)
 
