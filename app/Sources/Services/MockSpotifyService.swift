@@ -53,9 +53,41 @@ actor MockSpotifyService: SpotifyService {
         ]
     }
 
-    func recentlyPlayed() async throws -> [Track] {
+    func daylist() async throws -> Playlist? {
         await delay()
-        return makeTracks(seedPrefix: "recent", count: 8)
+        return Playlist(
+            id: Playlist.daylistID,
+            name: "thursday evening reset",
+            description: "mellow indie and dream pop to ease into the night. updates through the day.",
+            ownerName: "Made for Richard",
+            trackCount: 50,
+            artworkURL: art("daylist-evening"))
+    }
+
+    func likedSongs() async throws -> Playlist {
+        await delay()
+        return Playlist(
+            id: Playlist.likedSongsID,
+            name: "Liked Songs",
+            description: "Every song you've liked, in one place.",
+            ownerName: "Richard",
+            trackCount: 372,
+            artworkURL: nil)   // rendered with the signature purple gradient instead of art
+    }
+
+    func recentlyPlayed() async throws -> [MediaItem] {
+        await delay()
+        async let albums = savedAlbums()
+        async let lists = playlists()
+        // Interleave albums and playlists into a believable "recently played" row.
+        let a = (try? await albums) ?? []
+        let p = (try? await lists) ?? []
+        var items: [MediaItem] = []
+        for i in 0..<max(a.count, p.count) {
+            if i < p.count { items.append(.playlist(p[i])) }
+            if i < a.count { items.append(.album(a[i])) }
+        }
+        return items
     }
 
     func playlistTracks(id: String) async throws -> [Track] {
@@ -100,6 +132,7 @@ actor MockSpotifyService: SpotifyService {
     func next() async throws { await delay(120) }
     func previous() async throws { await delay(120) }
     func transferPlayback(toDeviceID: String) async throws { await delay(120) }
+    func setVolume(percent: Int) async throws { await delay(80) }
 
     // MARK: helpers
 

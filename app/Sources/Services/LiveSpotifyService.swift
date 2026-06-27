@@ -77,8 +77,10 @@ actor LiveSpotifyService: SpotifyService {
     func me() async throws -> UserProfile { throw SpotifyError.notImplemented }
     func playlists() async throws -> [Playlist] { throw SpotifyError.notImplemented }
     func savedAlbums() async throws -> [Album] { throw SpotifyError.notImplemented }
-    func recentlyPlayed() async throws -> [Track] { throw SpotifyError.notImplemented }
     func playlistTracks(id: String) async throws -> [Track] { throw SpotifyError.notImplemented }
+    func daylist() async throws -> Playlist? { throw SpotifyError.notImplemented }
+    func likedSongs() async throws -> Playlist { throw SpotifyError.notImplemented }
+    func recentlyPlayed() async throws -> [MediaItem] { throw SpotifyError.notImplemented }
     func search(query: String) async throws -> SearchResults { throw SpotifyError.notImplemented }
     func devices() async throws -> [Device] { throw SpotifyError.notImplemented }
     func playbackState() async throws -> PlaybackState { throw SpotifyError.notImplemented }
@@ -87,4 +89,5 @@ actor LiveSpotifyService: SpotifyService {
     func next() async throws { throw SpotifyError.notImplemented }
     func previous() async throws { throw SpotifyError.notImplemented }
     func transferPlayback(toDeviceID: String) async throws { throw SpotifyError.notImplemented }
+    func setVolume(percent: Int) async throws { throw SpotifyError.notImplemented }
 }

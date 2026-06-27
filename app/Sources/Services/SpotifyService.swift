@@ -15,8 +15,15 @@ protocol SpotifyService: Sendable {
     // Library / browse
     func playlists() async throws -> [Playlist]
     func savedAlbums() async throws -> [Album]
-    func recentlyPlayed() async throws -> [Track]
     func playlistTracks(id: String) async throws -> [Track]
+
+    // Home screen
+    /// The current algorithmic "daylist" (time-of-day playlist), if Spotify offers one.
+    func daylist() async throws -> Playlist?
+    /// The user's saved tracks, surfaced as a pseudo-playlist (`Playlist.likedSongsID`).
+    func likedSongs() async throws -> Playlist
+    /// Recently played albums & playlists, *excluding* the daylist and Liked Songs.
+    func recentlyPlayed() async throws -> [MediaItem]
 
     // Search
     func search(query: String) async throws -> SearchResults
@@ -29,6 +36,7 @@ protocol SpotifyService: Sendable {
     func next() async throws
     func previous() async throws
     func transferPlayback(toDeviceID: String) async throws
+    func setVolume(percent: Int) async throws
 }
 
 /// Errors surfaced to the UI. Mirrors the backend error shapes in api-contract.md.
