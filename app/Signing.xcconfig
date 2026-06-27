@@ -1,0 +1,11 @@
+// Signing configuration.
+//
+// PLACEHOLDER owned by the `apple-signing` agent (see docs/agents/apple-signing.md).
+// Leave DEVELOPMENT_TEAM empty to build/run in the visionOS Simulator without signing.
+// To build to a real Vision Pro / TestFlight, apple-signing fills in the Team ID here.
+
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+// In the Simulator we don't need a signing identity:
+CODE_SIGNING_ALLOWED[sdk=xrsimulator*] = NO
