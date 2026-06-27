@@ -10,20 +10,15 @@ whether the iPad-style in-app playback path can be replicated on Vision Pro.
 
 ## Architecture
 
-```
-┌──────────────────────────┐        ┌───────────────────────────────┐
-│  visionOS app  (SwiftUI)  │        │  Spotify                       │
-│  /app                     │        │  - Accounts (OAuth/PKCE)       │
-│                           │        │  - Web API (browse/search)     │
-│   ASWebAuthenticationSes. │──────▶ │  - Connect (remote playback)   │
-└─────────────┬─────────────┘        └───────────────▲───────────────┘
-              │ HTTPS                                 │ client_secret
-              ▼                                       │ token exchange
-┌──────────────────────────┐                          │
-│  Go auth service  /backend│──────────────────────────┘
-│  https://vision-spots.    │
-│         richardmch.org    │   Deployed as a Docker service in the
-└──────────────────────────┘   self-host repo via Cloudflare Tunnel
+```mermaid
+flowchart TD
+    app["**visionOS app** (SwiftUI)\n`/app`"]
+    backend["**Go auth service**\n`/backend`\nhttps://vision-spots.richardmch.org\n_(Docker · Cloudflare Tunnel)_"]
+    spotify["**Spotify**\n- Accounts (OAuth / PKCE)\n- Web API (browse / search)\n- Connect (remote playback)"]
+
+    app -- "ASWebAuthenticationSession\n(OAuth redirect)" --> spotify
+    app -- "HTTPS token requests" --> backend
+    backend -- "client_secret token exchange" --> spotify
 ```
 
 ## Repository layout
