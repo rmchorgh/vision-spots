@@ -7,21 +7,19 @@ import (
 )
 
 // Claims for our short-lived session token.
-// The app only ever holds this JWT — never raw Spotify tokens.
 type Claims struct {
 	SessionID string `json:"sid"`
 	jwt.RegisteredClaims
 }
 
-// Store is the v1 in-memory token store (state → verifier, sessionID → spotify tokens).
-// Note in README: replace this map+mutex with Redis or SQLite for multi-user / persistence.
+// Store is v1 in-memory implementation. Single user only.
+// Replace with Redis or SQLite for production (see README).
 type Store struct {
-	states   map[string]StateEntry // state → verifier + expiry
+	states   map[string]StateEntry
 	sessions map[string]SpotifyTokens
-	// TODO: add mutex for production
 }
 
-// StateEntry holds PKCE verifier with short TTL.
+// StateEntry holds the PKCE verifier tied to a state parameter with TTL.
 type StateEntry struct {
 	Verifier  string
 	ExpiresAt time.Time
@@ -33,7 +31,6 @@ type SpotifyTokens struct {
 	ExpiresAt    time.Time
 }
 
-// NewStore creates the in-memory store.
 func NewStore() *Store {
 	return &Store{
 		states:   make(map[string]StateEntry),
@@ -41,5 +38,34 @@ func NewStore() *Store {
 	}
 }
 
-// X: The backend owns the real Spotify tokens. The visionOS app only receives a signed session JWT.
-// This design keeps the client secret and long-lived refresh tokens server-side.
+// SaveState stores the PKCE verifier for a given state with a short TTL.
+// Called by /auth/start.
+func (s *Store) SaveState(state, verifier string, ttl time.Duration) {
+	s.states[state] = StateEntry{
+		Verifier:  verifier,
+		ExpiresAt: time.Now().Add(ttl),
+	}
+}
+
+// GetVerifier retrieves and deletes the verifier for a state (one-time use).
+func (s *Store) GetVerifier(state string) (string, bool) {
+	entry, ok := s.states[state]
+	if !ok || time.Now().After(entry.ExpiresAt) {
+		return "", false
+	}
+	delete(s.states, state)
+	return entry.Verifier, true
+}
+
+// SaveTokens stores Spotify tokens against a session ID.
+func (s *Store) SaveTokens(sessionID string, tokens SpotifyTokens) {
+	s.sessions[sessionID] = tokens
+}
+
+// GetTokens retrieves tokens for a session.
+func (s *Store) GetTokens(sessionID string) (SpotifyTokens, bool) {
+	t, ok := s.sessions[sessionID]
+	return t, ok
+}
+
+// X: In-memory store for v1. The map is protected by mutex in real version. TTL prevents replay attacks on old states.

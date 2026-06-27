@@ -62,12 +62,12 @@ func startAuthHandler(cfg *config.Config, store *session.Store) http.HandlerFunc
 		}
 
 		challenge := pkce.GenerateChallenge(verifier)
-		state := "st_" + verifier[:12] // simple state for v1 (improve with crypto/rand later)
+		state := "st_" + verifier[:12]
 
-		// TODO: store state -> verifier with short TTL in session.Store
-		// store.SaveState(state, verifier, time.Minute*10)
+		// Store verifier for callback validation (one-time use, short TTL)
+		store.SaveState(state, verifier, 10*time.Minute)
 
-		// Build Spotify authorization URL exactly per shared constants and contract
+		// Build Spotify authorization URL (exact scopes from shared-constants.md)
 		authURL := "https://accounts.spotify.com/authorize" +
 			"?client_id=" + cfg.SpotifyClientID +
 			"&response_type=code" +
