@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -56,6 +57,9 @@ func NewRouter(cfg *config.Config, store *session.Store) *chi.Mux {
 		r.Post("/auth/refresh", refreshHandler(cfg, store))
 
 		r.HandleFunc("/api/spotify/*", spotifyProxyHandler(cfg, store))
+
+		// Typed playlist endpoint with pagination (avoids pushing cursor construction to the app)
+		r.Get("/api/playlists/{playlist_id}/tracks", playlistTracksHandler(cfg, store))
 
 		r.Route("/api/player", func(r chi.Router) {
 			r.Get("/devices", playerDevicesHandler(cfg, store))
@@ -364,6 +368,146 @@ func spotifyProxyHandler(cfg *config.Config, store *session.Store) http.HandlerF
 		copyResponseHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
+	}
+}
+
+// playlistTracksHandler implements GET /api/playlists/{playlist_id}/tracks.
+// It wraps Spotify's GET /v1/playlists/{id}/items, reshaping the response into
+// a flat, app-friendly shape and computing next_offset so the app never needs
+// to construct Spotify cursor URLs.
+func playlistTracksHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID, ok := r.Context().Value(sessionIDKey).(string)
+		if !ok {
+			writeError(w, "session_expired", "no active session found", http.StatusUnauthorized)
+			return
+		}
+
+		playlistID := chi.URLParam(r, "playlist_id")
+		if playlistID == "" {
+			writeError(w, "bad_request", "playlist_id is required", http.StatusBadRequest)
+			return
+		}
+
+		// Parse and clamp pagination params
+		limit := 50
+		offset := 0
+		if v := r.URL.Query().Get("limit"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 || n > 100 {
+				writeError(w, "bad_request", "limit must be an integer between 1 and 100", http.StatusBadRequest)
+				return
+			}
+			limit = n
+		}
+		if v := r.URL.Query().Get("offset"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				writeError(w, "bad_request", "offset must be a non-negative integer", http.StatusBadRequest)
+				return
+			}
+			offset = n
+		}
+
+		targetURL := fmt.Sprintf("%s/v1/playlists/%s/items?limit=%d&offset=%d", spotify.APIBaseURL, playlistID, limit, offset)
+		req, err := http.NewRequest("GET", targetURL, nil)
+		if err != nil {
+			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp, err := executeSpotifyRequest(cfg, store, sessionID, req)
+		if err != nil {
+			writeError(w, "spotify_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			writeError(w, "not_found", "playlist not found", http.StatusNotFound)
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			writeError(w, "spotify_error", fmt.Sprintf("Spotify returned %d: %s", resp.StatusCode, string(body)), resp.StatusCode)
+			return
+		}
+
+		// Spotify's paged items response
+		var spotifyResp struct {
+			Total  int `json:"total"`
+			Limit  int `json:"limit"`
+			Offset int `json:"offset"`
+			Items  []struct {
+				Track *struct {
+					URI      string `json:"uri"`
+					Name     string `json:"name"`
+					Duration int    `json:"duration_ms"`
+					Artists  []struct {
+						Name string `json:"name"`
+					} `json:"artists"`
+					Album struct {
+						Name   string `json:"name"`
+						Images []struct {
+							URL string `json:"url"`
+						} `json:"images"`
+					} `json:"album"`
+				} `json:"track"`
+			} `json:"items"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&spotifyResp); err != nil {
+			writeError(w, "internal_error", "failed to parse Spotify response", http.StatusInternalServerError)
+			return
+		}
+
+		// Flatten each item into the contract shape; skip null tracks (local files, removed tracks)
+		type trackItem struct {
+			TrackID    string `json:"track_id"`
+			Name       string `json:"name"`
+			Artist     string `json:"artist"`
+			Album      string `json:"album"`
+			DurationMS int    `json:"duration_ms"`
+			Image      string `json:"image"`
+		}
+
+		items := make([]trackItem, 0, len(spotifyResp.Items))
+		for _, it := range spotifyResp.Items {
+			if it.Track == nil {
+				continue // local files or removed tracks have a null track object
+			}
+			artist := ""
+			if len(it.Track.Artists) > 0 {
+				artist = it.Track.Artists[0].Name
+			}
+			image := ""
+			if len(it.Track.Album.Images) > 0 {
+				image = it.Track.Album.Images[0].URL
+			}
+			items = append(items, trackItem{
+				TrackID:    it.Track.URI,
+				Name:       it.Track.Name,
+				Artist:     artist,
+				Album:      it.Track.Album.Name,
+				DurationMS: it.Track.Duration,
+				Image:      image,
+			})
+		}
+
+		// next_offset is null when we've consumed all items
+		var nextOffset *int
+		if offset+len(items) < spotifyResp.Total {
+			n := offset + limit
+			nextOffset = &n
+		}
+
+		writeJSON(w, map[string]any{
+			"items":       items,
+			"total":       spotifyResp.Total,
+			"limit":       spotifyResp.Limit,
+			"offset":      spotifyResp.Offset,
+			"next_offset": nextOffset,
+		})
 	}
 }
 
