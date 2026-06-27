@@ -18,6 +18,6 @@ USER 65532:65532
 EXPOSE 5055
 
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD ["/vision-spots-backend", "-health"] || exit 1
+  CMD ["/vision-spots-backend", "-health"]
 
 ENTRYPOINT ["/vision-spots-backend"]
