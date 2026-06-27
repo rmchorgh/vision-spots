@@ -31,9 +31,12 @@ sEvery agent PR **must** follow this exactly.
    - Next agent tasks/blockers
    - Manual human steps (secrets, portals)
 
+---
+
+🤖 **Generated with Opesncode/Claude Code and [MODEL]**
+
 ## Rules
 - Reference your `docs/agents/&lt;name&gt;.md` task file.
 - **No secrets** — flag them for handoff.
 - Link contracts touched: `[api-contract](docs/contracts/api-contract.md)`
-- End with 🤖 **Generated with Opesncode/Claude Code and [MODEL]**.
 - Open from `agent/&lt;name&gt;` branch/worktree.

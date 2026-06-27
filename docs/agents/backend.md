@@ -35,7 +35,8 @@ go mod init github.com/rmchorgh/vision-spots/backend
    is fine for single-user v1 (note in README how to swap for Redis/SQLite later).
 4. **Endpoints** — implement every endpoint in `api-contract.md`:
    `GET /auth/start`, `GET /callback`, `POST /auth/refresh`, `GET /me`,
-   `GET /api/spotify/*` proxy, and the `/api/player/*` Connect controls.
+   `GET /api/spotify/*` proxy, `GET /api/playlists/:playlist_id/tracks` (paginated,
+   see contract for shape), and the `/api/player/*` Connect controls.
 5. **Spotify client** — `internal/spotify`: token exchange, refresh, and an authenticated
    `Do(req)` that injects the access token and **auto-refreshes once on 401**.
 6. **Sessions** — mint a signed session token (JWT, HS256 with `SESSION_SIGNING_KEY`) that
