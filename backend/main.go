@@ -13,6 +13,24 @@ import (
 // X: backend agent - main entrypoint. Loads config, creates in-memory session store,
 // wires chi router with all endpoints defined in api-contract.md, and starts server.
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "-health" {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "5055"
+		}
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%s/healthz", port))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr, "health check failed: status %d\n", resp.StatusCode)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
