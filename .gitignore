@@ -1,0 +1,26 @@
+# Agent worktrees (each agent works in its own; never committed to main)
+.claude/worktrees/*
+!.claude/worktrees/.gitkeep
+
+# Secrets — never commit. See docs/contracts/shared-constants.md
+.env
+*.env
+!*.env.example
+backend/config.local.*
+
+# Go
+/backend/bin/
+/backend/vision-spots-auth
+*.test
+*.out
+
+# Xcode / visionOS
+/app/build/
+/app/DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+.DS_Store
+
+# macOS
+.DS_Store
