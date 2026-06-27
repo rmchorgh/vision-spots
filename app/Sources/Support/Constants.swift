@@ -6,9 +6,17 @@ import Foundation
 
 enum AppConfig {
 
-    /// THE switch the `ui` agent documents: flip to `true` once the `spotify-connection`
-    /// agent + a live backend are ready. `false` runs entirely on MockSpotifyService.
-    static let useLiveBackend = false
+    /// THE switch the `ui` agent documents: which `SpotifyService` the app uses.
+    /// Defaults to Mock so design/dev needs no backend. Build with `-D USE_LIVE_BACKEND`
+    /// (set `USE_LIVE_BACKEND` in the scheme's "Other Swift Flags" / a `Live` config) to
+    /// run against the real backend + Spotify — no source edit required for the swap.
+    static let useLiveBackend: Bool = {
+        #if USE_LIVE_BACKEND
+        return true
+        #else
+        return false
+        #endif
+    }()
 
     /// Self-hosted Go auth/token service.
     static let backendBaseURL = URL(string: "https://vision-spots.richardmch.org")!
