@@ -7,18 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
-
-	"github.com/rmchorgh/vision-spots/backend/internal/config"
 )
-
-// Client handles all communication with Spotify APIs.
-// Keeps client_secret server-side and auto-refreshes tokens on 401.
-type Client struct {
-	config *config.Config
-	http   *http.Client
-	tokens *session.SpotifyTokens // will be wired from store later
-}
 
 // TokenResponse from Spotify token endpoint.
 type TokenResponse struct {

@@ -3,11 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rmchorgh/vision-spots/backend/internal/config"
 	"github.com/rmchorgh/vision-spots/backend/internal/pkce"
 	"github.com/rmchorgh/vision-spots/backend/internal/session"
+	"github.com/rmchorgh/vision-spots/backend/internal/spotify"
 )
 
 // NewRouter creates the chi router with all endpoints from api-contract.md.
@@ -87,13 +89,37 @@ func startAuthHandler(cfg *config.Config, store *session.Store) http.HandlerFunc
 
 func callbackHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Full implementation pending: 
-		// 1. Validate state matches stored verifier
-		// 2. Exchange code for access/refresh token using Spotify client (with client_secret)
-		// 3. Create session, mint signed JWT
-		// 4. 302 redirect to visionspots://callback?session=eyJ...
-		http.Redirect(w, r, cfg.AllowedOrigin+"?error=callback_not_fully_implemented_yet", http.StatusFound)
+		code := r.URL.Query().Get("code")
+		state := r.URL.Query().Get("state")
+
+		if code == "" || state == "" {
+			writeError(w, "bad_request", "missing code or state", http.StatusBadRequest)
+			return
+		}
+
+		verifier, ok := store.GetVerifier(state)
+		if !ok {
+			writeError(w, "invalid_state", "state expired or invalid", http.StatusBadRequest)
+			return
+		}
+
+		// Exchange code for tokens using PKCE verifier (client secret stays on server)
+		tokens, err := spotify.ExchangeCode(cfg, code, verifier)
+		if err != nil {
+			writeError(w, "spotify_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// TODO: create session ID, mint JWT, store tokens, redirect to app deep link
+		// For now we return success so /auth/start + callback roundtrip works
+		writeJSON(w, map[string]any{
+			"status":        "success",
+			"access_token":  "[redacted]",
+			"refresh_token": "[redacted]",
+		})
 	}
+}
+
 }
 
 // Placeholder handlers (full versions will call Spotify client with token from session)
