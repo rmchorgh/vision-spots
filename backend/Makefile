@@ -1,7 +1,7 @@
 .PHONY: run test docker-build clean
 
 run:
-	go run .
+	@set -a && . ./.env && set +a && go run .
 
 test:
 	go test ./... -v
