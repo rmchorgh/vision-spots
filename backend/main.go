@@ -10,8 +10,6 @@ import (
 	"github.com/rmchorgh/vision-spots/backend/internal/session"
 )
 
-// X: backend agent - main entrypoint. Loads config, creates in-memory session store,
-// wires chi router with all endpoints defined in api-contract.md, and starts server.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-health" {
 		port := os.Getenv("PORT")
@@ -40,7 +38,6 @@ func main() {
 	store := session.NewStore()
 
 	fmt.Printf("vision-spots backend starting on :%d...\n", cfg.Port)
-	fmt.Println("X: PKCE + session JWT OAuth broker ready. Endpoints match api-contract.md exactly.")
 
 	r := httpapi.NewRouter(cfg, store)
 

@@ -10,16 +10,15 @@ import (
 
 // Config holds all settings loaded from environment.
 type Config struct {
-	Port              int
-	SpotifyClientID   string
+	Port                int
+	SpotifyClientID     string
 	SpotifyClientSecret string
-	SpotifyRedirectURI string
-	SessionSigningKey string
-	AllowedOrigin     string
+	SpotifyRedirectURI  string
+	SessionSigningKey   string
+	AllowedOrigin       string
 }
 
 // Load reads environment variables and validates required fields.
-// Fails fast with clear message if anything is missing (per backend.md).
 func Load() (*Config, error) {
 	c := &Config{
 		SpotifyClientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
@@ -39,7 +38,6 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid PORT: %w", err)
 	}
 
-	// Fail fast on missing required values
 	if c.SpotifyClientID == "" {
 		return nil, fmt.Errorf("SPOTIFY_CLIENT_ID is required (register app at developer.spotify.com)")
 	}

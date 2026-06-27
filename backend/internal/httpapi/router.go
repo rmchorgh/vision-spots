@@ -3,10 +3,13 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,28 +19,44 @@ import (
 	"github.com/rmchorgh/vision-spots/backend/internal/spotify"
 )
 
-// NewRouter creates the chi router with all endpoints from api-contract.md.
-// Heavily commented so the owner can understand the full OAuth/PKCE/session flow.
+// hopByHopHeaders must not be forwarded between HTTP peers per RFC 7230 §6.1.
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailers":            true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+func copyResponseHeaders(dst, src http.Header) {
+	for k, v := range src {
+		if !hopByHopHeaders[k] {
+			for _, val := range v {
+				dst.Add(k, val)
+			}
+		}
+	}
+}
+
 func NewRouter(cfg *config.Config, store *session.Store) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", healthHandler)
 
-	// Phase 1: Public auth endpoints (no Bearer token needed)
 	r.Get("/auth/start", startAuthHandler(cfg, store))
 	r.Get("/callback", callbackHandler(cfg, store))
 
-	// Phase 2: Protected endpoints (session JWT required)
 	r.Group(func(r chi.Router) {
 		r.Use(sessionMiddleware(cfg, store))
 
 		r.Get("/me", meHandler(cfg, store))
 		r.Post("/auth/refresh", refreshHandler(cfg, store))
 
-		// Generic proxy for Spotify Web API
 		r.HandleFunc("/api/spotify/*", spotifyProxyHandler(cfg, store))
 
-		// Spotify Connect player controls
 		r.Route("/api/player", func(r chi.Router) {
 			r.Get("/devices", playerDevicesHandler(cfg, store))
 			r.Put("/play", playerPlayHandler(cfg, store))
@@ -57,8 +76,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
-// startAuthHandler begins the PKCE flow.
-// Generates verifier + S256 challenge, creates random state, stores the verifier (TODO), returns Spotify authorize URL.
 func startAuthHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		verifier, err := pkce.GenerateVerifier()
@@ -68,21 +85,32 @@ func startAuthHandler(cfg *config.Config, store *session.Store) http.HandlerFunc
 		}
 
 		challenge := pkce.GenerateChallenge(verifier)
-		state := "st_" + verifier[:12]
 
-		// Store verifier for callback validation (one-time use, short TTL)
+		// Generate state independently from verifier so an observer of the
+		// redirect URL cannot infer any bits of the PKCE verifier.
+		stateBytes := make([]byte, 16)
+		if _, err := rand.Read(stateBytes); err != nil {
+			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
+			return
+		}
+		state := "st_" + hex.EncodeToString(stateBytes)
+
 		store.SaveState(state, verifier, 10*time.Minute)
 
-		// Build Spotify authorization URL (exact scopes from shared-constants.md)
-		authURL := "https://accounts.spotify.com/authorize" +
-			"?client_id=" + cfg.SpotifyClientID +
-			"&response_type=code" +
-			"&redirect_uri=" + cfg.SpotifyRedirectURI +
-			"&code_challenge=" + challenge +
-			"&code_challenge_method=S256" +
-			"&state=" + state +
-			"&scope=user-read-private user-read-email user-library-read playlist-read-private " +
-			"user-read-playback-state user-modify-playback-state user-read-currently-playing streaming"
+		// Use url.Values so all parameters are properly percent-encoded,
+		// including redirect_uri (which may contain special chars) and scope
+		// (whose spaces must be encoded to avoid breaking URL parsing on iOS).
+		params := url.Values{}
+		params.Set("client_id", cfg.SpotifyClientID)
+		params.Set("response_type", "code")
+		params.Set("redirect_uri", cfg.SpotifyRedirectURI)
+		params.Set("code_challenge", challenge)
+		params.Set("code_challenge_method", "S256")
+		params.Set("state", state)
+		params.Set("scope", "user-read-private user-read-email user-library-read playlist-read-private "+
+			"user-read-playback-state user-modify-playback-state user-read-currently-playing streaming")
+
+		authURL := "https://accounts.spotify.com/authorize?" + params.Encode()
 
 		writeJSON(w, map[string]string{
 			"authorize_url": authURL,
@@ -107,36 +135,30 @@ func callbackHandler(cfg *config.Config, store *session.Store) http.HandlerFunc 
 			return
 		}
 
-		// Exchange code for tokens using PKCE verifier (client secret stays on server)
 		tokens, err := spotify.ExchangeCode(cfg, code, verifier)
 		if err != nil {
 			writeError(w, "spotify_error", err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Generate new session ID
 		sessionID, err := session.GenerateSessionID()
 		if err != nil {
 			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Store the Spotify tokens in the session store
-		spotifyTokens := session.SpotifyTokens{
+		store.SaveTokens(sessionID, session.SpotifyTokens{
 			AccessToken:  tokens.AccessToken,
 			RefreshToken: tokens.RefreshToken,
 			ExpiresAt:    time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
-		}
-		store.SaveTokens(sessionID, spotifyTokens)
+		})
 
-		// Mint the JWT session token (valid for 1 hour)
 		jwtToken, err := session.MintToken(cfg.SessionSigningKey, sessionID, 1*time.Hour)
 		if err != nil {
 			writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Redirect to the app deep link
 		redirectBase := cfg.AllowedOrigin
 		if redirectBase == "" {
 			redirectBase = "visionspots://callback"
@@ -145,32 +167,66 @@ func callbackHandler(cfg *config.Config, store *session.Store) http.HandlerFunc 
 	}
 }
 
-// Helper to execute request to Spotify using stored tokens and auto-refresh persistence.
+// executeSpotifyRequest sends req to Spotify with the session's access token.
+// On 401, it acquires a per-session lock and refreshes — only the first goroutine
+// to reach the lock actually calls Spotify's token endpoint; concurrent goroutines
+// wait for the lock and then re-use the already-refreshed token.
 func executeSpotifyRequest(cfg *config.Config, store *session.Store, sessionID string, req *http.Request) (*http.Response, error) {
 	tokens, ok := store.GetTokens(sessionID)
 	if !ok {
 		return nil, fmt.Errorf("session tokens not found")
 	}
 
-	resp, tr, err := spotify.Request(cfg, req, tokens.AccessToken, tokens.RefreshToken)
+	// Buffer the body so we can replay the request if we need to retry after refresh.
+	var bodyBytes []byte
+	if req.Body != nil && req.Body != http.NoBody {
+		var err error
+		bodyBytes, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+
+	resp, err := spotify.Do(req, tokens.AccessToken)
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		return resp, nil
+	}
+	resp.Body.Close()
 
-	// If tokens were auto-refreshed, save the updated tokens to store
-	if tr != nil {
-		spotifyTokens := session.SpotifyTokens{
+	// Serialize token refresh per session. If two requests hit a 401 at the same
+	// time, the second goroutine to acquire the lock will find the token already
+	// updated and skip the Spotify call, using the new token for its retry instead.
+	mu := store.RefreshLock(sessionID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	current, ok := store.GetTokens(sessionID)
+	if !ok {
+		return nil, fmt.Errorf("session tokens not found")
+	}
+	if current.AccessToken == tokens.AccessToken {
+		tr, err := spotify.RefreshToken(cfg, current.RefreshToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refresh token: %w", err)
+		}
+		current = session.SpotifyTokens{
 			AccessToken:  tr.AccessToken,
 			RefreshToken: tr.RefreshToken,
 			ExpiresAt:    time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second),
 		}
-		store.SaveTokens(sessionID, spotifyTokens)
+		store.SaveTokens(sessionID, current)
 	}
 
-	return resp, nil
+	if len(bodyBytes) > 0 {
+		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+	return spotify.Do(req, current.AccessToken)
 }
 
-// meHandler proxies Spotify GET /v1/me to return the current user's profile.
 func meHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := r.Context().Value(sessionIDKey).(string)
@@ -231,7 +287,6 @@ func meHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	}
 }
 
-// refreshHandler triggers manual Spotify token refresh and returns a fresh JWT session token.
 func refreshHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := r.Context().Value(sessionIDKey).(string)
@@ -252,12 +307,11 @@ func refreshHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 			return
 		}
 
-		spotifyTokens := session.SpotifyTokens{
+		store.SaveTokens(sessionID, session.SpotifyTokens{
 			AccessToken:  tr.AccessToken,
 			RefreshToken: tr.RefreshToken,
 			ExpiresAt:    time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second),
-		}
-		store.SaveTokens(sessionID, spotifyTokens)
+		})
 
 		jwtToken, err := session.MintToken(cfg.SessionSigningKey, sessionID, 1*time.Hour)
 		if err != nil {
@@ -272,7 +326,6 @@ func refreshHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	}
 }
 
-// spotifyProxyHandler is a generic transparent proxy for Spotify Web API endpoints.
 func spotifyProxyHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := r.Context().Value(sessionIDKey).(string)
@@ -308,11 +361,7 @@ func spotifyProxyHandler(cfg *config.Config, store *session.Store) http.HandlerF
 		}
 		defer resp.Body.Close()
 
-		for k, v := range resp.Header {
-			for _, val := range v {
-				w.Header().Add(k, val)
-			}
-		}
+		copyResponseHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
 	}
@@ -326,7 +375,6 @@ func handlePlayerResponse(w http.ResponseWriter, resp *http.Response) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusForbidden {
-		// Typically means premium is required for playback control
 		writeError(w, "premium_required", "This action requires Spotify Premium", http.StatusForbidden)
 		return
 	}
@@ -336,12 +384,7 @@ func handlePlayerResponse(w http.ResponseWriter, resp *http.Response) {
 		return
 	}
 
-	// Write OK and copy body
-	for k, v := range resp.Header {
-		for _, val := range v {
-			w.Header().Add(k, val)
-		}
-	}
+	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(http.StatusOK)
 	w.Write(body)
 }
@@ -379,7 +422,6 @@ func playerPlayHandler(cfg *config.Config, store *session.Store) http.HandlerFun
 			return
 		}
 
-		// Read and parse request body to get device_id and extract other payload
 		var payload struct {
 			DeviceID   string   `json:"device_id"`
 			ContextURI string   `json:"context_uri,omitempty"`
@@ -405,7 +447,6 @@ func playerPlayHandler(cfg *config.Config, store *session.Store) http.HandlerFun
 			targetURL += "?device_id=" + payload.DeviceID
 		}
 
-		// Rebuild the body to send to Spotify
 		spotifyPayload := make(map[string]any)
 		if payload.ContextURI != "" {
 			spotifyPayload["context_uri"] = payload.ContextURI
@@ -561,7 +602,6 @@ func playerStateHandler(cfg *config.Config, store *session.Store) http.HandlerFu
 		}
 		defer resp.Body.Close()
 
-		// If Spotify returns 204 No Content for player state (meaning no active playback), we return 204
 		if resp.StatusCode == http.StatusNoContent {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -573,9 +613,7 @@ func playerStateHandler(cfg *config.Config, store *session.Store) http.HandlerFu
 
 type contextKey string
 
-const (
-	sessionIDKey contextKey = "sessionID"
-)
+const sessionIDKey contextKey = "sessionID"
 
 func sessionMiddleware(cfg *config.Config, store *session.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -593,23 +631,15 @@ func sessionMiddleware(cfg *config.Config, store *session.Store) func(http.Handl
 				return
 			}
 
-			// Ensure the session actually exists in our store
 			_, ok := store.GetTokens(sessionID)
 			if !ok {
 				writeError(w, "session_expired", "session not found in store", http.StatusUnauthorized)
 				return
 			}
 
-			// Attach sessionID to context
 			ctx := context.WithValue(r.Context(), sessionIDKey, sessionID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
-	}
-}
-
-func errorHandler(code string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, code, "endpoint not yet implemented", 501)
 	}
 }
 
