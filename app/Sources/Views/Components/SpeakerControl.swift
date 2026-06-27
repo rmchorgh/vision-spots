@@ -59,6 +59,7 @@ private struct VolumePopover: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
             }
             .padding(24)
         }
