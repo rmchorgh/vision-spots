@@ -12,12 +12,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 )
 
-const (
-	// BaseURL is the local backend address.
-	BaseURL = "http://localhost:5055"
-)
+// BaseURL is the backend address. Override with the BASE_URL environment variable.
+var BaseURL = func() string {
+	if u := os.Getenv("BASE_URL"); u != "" {
+		return u
+	}
+	return "http://localhost:5055"
+}()
 
 // MustGetToken obtains a session JWT from the local backend and panics if it
 // fails. Intended for use in test setup (TestMain or t.Helper wrappers).
@@ -29,9 +33,14 @@ func MustGetToken() string {
 	return token
 }
 
-// GetToken POSTs to /debug/mint-session on the local backend, which is only
-// active when DEBUG_SPOTIFY_TOKEN is set in the backend's environment.
+// GetToken returns a session JWT for use in tests. If SESSION_JWT is set in
+// the environment it is returned directly; otherwise it POSTs to
+// /debug/mint-session on the local backend (only active when
+// DEBUG_SPOTIFY_TOKEN is set in the backend's environment).
 func GetToken() (string, error) {
+	if tok := os.Getenv("SESSION_JWT"); tok != "" {
+		return tok, nil
+	}
 	resp, err := http.Post(BaseURL+"/debug/mint-session", "application/json", nil)
 	if err != nil {
 		return "", fmt.Errorf("POST /debug/mint-session failed — is the backend running? (make run): %w", err)

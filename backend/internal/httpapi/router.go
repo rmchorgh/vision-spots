@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -167,12 +169,94 @@ func callbackHandler(cfg *config.Config, store *session.Store) http.HandlerFunc 
 			return
 		}
 
-		redirectBase := cfg.AllowedOrigin
-		if redirectBase == "" {
-			redirectBase = "visionspots://callback"
+		deepLink := "visionspots://callback?session=" + jwtToken
+
+		if isIOSUserAgent(r.UserAgent()) {
+			http.Redirect(w, r, deepLink, http.StatusFound)
+			return
 		}
-		http.Redirect(w, r, redirectBase+"?session="+jwtToken, http.StatusFound)
+
+		webURL := "https://vision-spots.richardmch.org/?session=" + jwtToken
+		serveCallbackPage(w, jwtToken, deepLink, webURL)
 	}
+}
+
+func isIOSUserAgent(ua string) bool {
+	ua = strings.ToLower(ua)
+	return strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") || strings.Contains(ua, "ipod")
+}
+
+var callbackPageTmpl = template.Must(template.New("callback").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision Spots — Signed In</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      font-family: system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #f5f5f5;
+      padding: 2rem;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    p { color: #888; font-size: 0.9rem; }
+    .actions { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; max-width: 320px; }
+    button, a.btn {
+      display: block;
+      width: 100%;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      font-weight: 500;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+    button:hover, a.btn:hover { opacity: 0.85; }
+    .primary { background: #1db954; color: #000; }
+    .secondary { background: #1a1a1a; color: #f5f5f5; border: 1px solid #333; }
+    .copied { background: #166534 !important; color: #f5f5f5 !important; }
+  </style>
+</head>
+<body>
+  <h1>You&#39;re signed in</h1>
+  <p>Head back to the app to continue.</p>
+  <div class="actions">
+    <button id="copy-btn" class="primary" data-token="{{.Token}}">Copy session token</button>
+    <a href="{{.DeepLink}}" class="btn secondary">Open in app</a>
+  </div>
+  <script>
+    document.getElementById('copy-btn').addEventListener('click', function() {
+      var btn = this;
+      navigator.clipboard.writeText(btn.dataset.token).then(function() {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copy session token';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    });
+  </script>
+</body>
+</html>`))
+
+func serveCallbackPage(w http.ResponseWriter, token, deepLink, _ string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = callbackPageTmpl.Execute(w, struct {
+		Token    string
+		DeepLink string
+	}{Token: token, DeepLink: deepLink})
 }
 
 // executeSpotifyRequest sends req to Spotify with the session's access token.
