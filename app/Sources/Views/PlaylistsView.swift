@@ -8,7 +8,7 @@ struct PlaylistsView: View {
     @State private var playlists: [Playlist] = []
     @State private var loadState: LoadState = .loading
 
-    private let columns = [GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 24)]
+    private let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
 
     var body: some View {
         ScrollView {
@@ -26,6 +26,7 @@ struct PlaylistsView: View {
                 .padding(28)
             }
         }
+        .lookToScroll()
         .navigationTitle("Playlists")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
