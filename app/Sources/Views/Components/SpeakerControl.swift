@@ -53,8 +53,13 @@ private struct SpeakerPopover: View {
     private var volumeControls: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let device = player.state.device {
-                Label(device.name, systemImage: DeviceList.icon(for: device.type))
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Label(device.name, systemImage: DeviceList.icon(for: device.type))
+                        .font(.headline)
+                    Text("\(Int(volume))%")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)   // dimmed, tracks the slider live
+                }
             }
             
             HStack(spacing: 14) {

@@ -15,7 +15,8 @@ protocol SpotifyService: Sendable {
     // Library / browse
     func playlists() async throws -> [Playlist]
     func savedAlbums() async throws -> [Album]
-    func playlistTracks(id: String) async throws -> [Track]
+    func playlistTracks(id: String, offset: Int, limit: Int) async throws -> TrackPage
+    func albumTracks(id: String, offset: Int, limit: Int) async throws -> TrackPage
 
     // Home screen
     /// The current algorithmic "daylist" (time-of-day playlist), if Spotify offers one.
@@ -37,6 +38,7 @@ protocol SpotifyService: Sendable {
     func previous() async throws
     func transferPlayback(toDeviceID: String) async throws
     func setVolume(percent: Int) async throws
+    func seek(toPositionMs ms: Int) async throws
 }
 
 /// Errors surfaced to the UI. Mirrors the backend error shapes in api-contract.md.

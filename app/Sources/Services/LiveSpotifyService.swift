@@ -124,24 +124,33 @@ actor LiveSpotifyService: SpotifyService {
         return (page.items ?? []).compactMap { $0.album.flatMap(mapAlbum) }
     }
 
-    func playlistTracks(id: String) async throws -> [Track] {
-        let isLiked = id == Playlist.likedSongsID
-        let limit = isLiked ? 50 : 100
-        let maxPages = 10   // cap at ~500–1000 tracks so a huge playlist can't run away
-
-        var tracks: [Track] = []
-        var offset = 0
-        for _ in 0..<maxPages {
-            let path = isLiked
-                ? "api/spotify/me/tracks?limit=\(limit)&offset=\(offset)"
-                : "api/spotify/playlists/\(id)/tracks?limit=\(limit)&offset=\(offset)"
-            let page: Paging<PlaylistTrackItem> = try await get(path)
-            let items = page.items ?? []
-            tracks.append(contentsOf: items.compactMap { $0.track.flatMap(mapTrack) })
-            if items.count < limit { break }
-            offset += limit
+    func playlistTracks(id: String, offset: Int, limit: Int) async throws -> TrackPage {
+        if id == Playlist.likedSongsID {
+            // Liked Songs has no typed endpoint; page the generic /me/tracks proxy.
+            let page: Paging<PlaylistTrackItem> = try await get("api/spotify/me/tracks?limit=\(limit)&offset=\(offset)")
+            let tracks = (page.items ?? []).compactMap { $0.track.flatMap(mapTrack) }
+            let total = page.total ?? (offset + tracks.count)
+            let next = offset + tracks.count < total ? offset + tracks.count : nil
+            return TrackPage(tracks: tracks, total: total, nextOffset: next)
         }
-        return tracks
+
+        // Real playlists use the typed, app-shaped endpoint (one combined artist string,
+        // track_id is a `spotify:track:…` URI). next_offset comes straight from the backend.
+        let page: TypedTrackPageDTO = try await get("api/playlists/\(id)/tracks?limit=\(limit)&offset=\(offset)")
+        return TrackPage(
+            tracks: (page.items ?? []).compactMap(mapTypedTrack),
+            total: page.total ?? 0,
+            nextOffset: page.next_offset)
+    }
+
+    func albumTracks(id: String, offset: Int, limit: Int) async throws -> TrackPage {
+        // Generic proxy: album-track objects omit album art, so the detail view supplies a
+        // fallback. We don't get track-level images here.
+        let page: Paging<TrackDTO> = try await get("api/spotify/albums/\(id)/tracks?limit=\(limit)&offset=\(offset)")
+        let tracks = (page.items ?? []).compactMap(mapTrack)
+        let total = page.total ?? (offset + tracks.count)
+        let next = offset + tracks.count < total ? offset + tracks.count : nil
+        return TrackPage(tracks: tracks, total: total, nextOffset: next)
     }
 
     // MARK: SpotifyService — home
@@ -285,6 +294,10 @@ actor LiveSpotifyService: SpotifyService {
         _ = try await authedData(for: "api/spotify/me/player/volume?volume_percent=\(clamped)", method: "PUT")
     }
 
+    func seek(toPositionMs ms: Int) async throws {
+        _ = try await authedData(for: "api/spotify/me/player/seek?position_ms=\(max(0, ms))", method: "PUT")
+    }
+
     // MARK: Private helpers
 
     private func likedTrackURIs(limit: Int) async throws -> [String] {
@@ -314,6 +327,22 @@ actor LiveSpotifyService: SpotifyService {
             albumName: d.album?.name ?? "",
             durationMs: d.duration_ms ?? 0,
             artworkURL: firstImageURL(d.album?.images))
+    }
+
+    /// Maps the typed playlist-track item (single combined artist string, `spotify:track:…`
+    /// URI) into a `Track`. The bare id is recovered by stripping the URI prefix so
+    /// `Track.uri` round-trips correctly.
+    private func mapTypedTrack(_ d: TypedTrackItem) -> Track? {
+        guard let uri = d.track_id else { return nil }
+        let id = uri.split(separator: ":").last.map(String.init) ?? uri
+        let artists = (d.artist?.isEmpty == false) ? [Artist(id: "\(id)-artist", name: d.artist!)] : []
+        return Track(
+            id: id,
+            name: d.name ?? "",
+            artists: artists,
+            albumName: d.album ?? "",
+            durationMs: d.duration_ms ?? 0,
+            artworkURL: d.image.flatMap { $0.isEmpty ? nil : URL(string: $0) })
     }
 
     private func mapAlbum(_ d: AlbumDTO) -> Album? {
@@ -398,6 +427,21 @@ private struct Paging<T: Decodable>: Decodable {
 
 private struct SavedAlbumItem: Decodable { let album: AlbumDTO? }
 private struct PlaylistTrackItem: Decodable { let track: TrackDTO? }
+
+// The typed, app-shaped playlist-tracks endpoint (`GET /api/playlists/:id/tracks`).
+private struct TypedTrackItem: Decodable {
+    let track_id: String?
+    let name: String?
+    let artist: String?
+    let album: String?
+    let duration_ms: Int?
+    let image: String?
+}
+private struct TypedTrackPageDTO: Decodable {
+    let items: [TypedTrackItem]?
+    let total: Int?
+    let next_offset: Int?
+}
 
 private struct DeviceDTO: Decodable {
     let id: String?

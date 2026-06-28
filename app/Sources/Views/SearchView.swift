@@ -27,6 +27,7 @@ struct SearchView: View {
                 resultsView
             }
         }
+        .lookToScroll()
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Songs, albums, playlists")

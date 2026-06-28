@@ -90,9 +90,16 @@ actor MockSpotifyService: SpotifyService {
         return items
     }
 
-    func playlistTracks(id: String) async throws -> [Track] {
+    func playlistTracks(id: String, offset: Int, limit: Int) async throws -> TrackPage {
         await delay()
-        return makeTracks(seedPrefix: "pl-\(id)", count: 18)
+        // Liked Songs is large; regular playlists are mid-sized — both exercise paging.
+        let total = id == Playlist.likedSongsID ? 372 : 57
+        return makeTrackPage(seedPrefix: "pl-\(id)", total: total, offset: offset, limit: limit)
+    }
+
+    func albumTracks(id: String, offset: Int, limit: Int) async throws -> TrackPage {
+        await delay()
+        return makeTrackPage(seedPrefix: "al-\(id)", total: 24, offset: offset, limit: limit)
     }
 
     func search(query: String) async throws -> SearchResults {
@@ -133,21 +140,32 @@ actor MockSpotifyService: SpotifyService {
     func previous() async throws { await delay(120) }
     func transferPlayback(toDeviceID: String) async throws { await delay(120) }
     func setVolume(percent: Int) async throws { await delay(80) }
+    func seek(toPositionMs ms: Int) async throws { await delay(80) }
 
     // MARK: helpers
 
     private func makeTracks(seedPrefix: String, count: Int) -> [Track] {
+        (0..<count).map { makeTrack(seedPrefix: seedPrefix, i: $0) }
+    }
+
+    /// One page out of a fixed-size `total`, so the UI's incremental paging is exercised.
+    private func makeTrackPage(seedPrefix: String, total: Int, offset: Int, limit: Int) -> TrackPage {
+        let end = min(offset + limit, total)
+        let tracks = offset < end ? (offset..<end).map { makeTrack(seedPrefix: seedPrefix, i: $0) } : []
+        let next = end < total ? end : nil
+        return TrackPage(tracks: tracks, total: total, nextOffset: next)
+    }
+
+    private func makeTrack(seedPrefix: String, i: Int) -> Track {
         let names = ["Aurora", "Glass", "Horizon", "Drift", "Polaris", "Solstice", "Echoes",
                      "Cascade", " Member", "Lanterns", "Coastline", "Northern", "Slow Burn",
                      "Daydream", "Undertow", "Stillness", "Wanderer", "Afterglow"]
         let artistPool = ["Tycho", "Bonobo", "Boards of Canada", "Emancipator", "ODESZA"]
-        return (0..<count).map { i in
-            Track(id: "\(seedPrefix)-\(i)",
-                  name: names[i % names.count],
-                  artists: [Artist(id: "ar\(i)", name: artistPool[i % artistPool.count])],
-                  albumName: "Album \(i % 4 + 1)",
-                  durationMs: (180 + (i * 17) % 120) * 1000,
-                  artworkURL: art("\(seedPrefix)-\(i)"))
-        }
+        return Track(id: "\(seedPrefix)-\(i)",
+                     name: names[i % names.count],
+                     artists: [Artist(id: "ar\(i)", name: artistPool[i % artistPool.count])],
+                     albumName: "Album \(i % 4 + 1)",
+                     durationMs: (180 + (i * 17) % 120) * 1000,
+                     artworkURL: art("\(seedPrefix)-\(i)"))
     }
 }
