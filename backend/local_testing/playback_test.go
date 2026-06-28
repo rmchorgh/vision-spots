@@ -30,15 +30,11 @@ func do(t *testing.T, token, method, path string, body io.Reader) *http.Response
 	return resp
 }
 
-// playerState fetches the current player state. Returns nil and skips the test if
-// no active device is found (204 No Content).
+// playerState fetches the current player state and fails the test if the response is not 200.
 func playerState(t *testing.T, token string) map[string]any {
 	t.Helper()
 	resp := do(t, token, "GET", "/api/player/state", nil)
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNoContent {
-		t.Skip("no active Spotify device — open Spotify and play something first")
-	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("GET /api/player/state: %d %s", resp.StatusCode, body)
@@ -57,12 +53,12 @@ func deviceID(state map[string]any) string {
 	return id
 }
 
-// currentTrackSpotifyID extracts the bare Spotify track ID (without "spotify:track:" prefix)
-// from the current item in a player state response.
-func currentTrackSpotifyID(state map[string]any) string {
+// currentTrackURI extracts the Spotify URI of the currently playing track
+// from a player state response (e.g. "spotify:track:4iV5W9uYEdYUVa79Axb7Rh").
+func currentTrackURI(state map[string]any) string {
 	item, _ := state["item"].(map[string]any)
-	uri, _ := item["uri"].(string) // e.g. "spotify:track:4iV5W9uYEdYUVa79Axb7Rh"
-	return strings.TrimPrefix(uri, "spotify:track:")
+	uri, _ := item["uri"].(string)
+	return uri
 }
 
 // expectOK reads and closes the body, failing the test if the status is unexpected.
@@ -78,8 +74,10 @@ func expectOK(t *testing.T, resp *http.Response, wantStatuses ...int) {
 	// premium_required is a soft skip — Connect endpoints need Premium
 	var parsed map[string]any
 	if json.Unmarshal(body, &parsed) == nil {
-		if e, _ := parsed["error"].(string); e == "premium_required" {
-			t.Skipf("Spotify Premium required: %s", parsed["message"])
+		if errObj, _ := parsed["error"].(map[string]any); errObj != nil {
+			if msg, _ := errObj["message"].(string); msg == "Premium required" {
+				t.Skipf("Spotify Premium required: %s", msg)
+			}
 		}
 	}
 	t.Fatalf("unexpected status %d: %s", resp.StatusCode, body)
@@ -155,27 +153,27 @@ func TestPlayback_SetVolume(t *testing.T) {
 func TestPlayback_Like(t *testing.T) {
 	token := MustGetToken()
 	state := playerState(t, token)
-	trackID := currentTrackSpotifyID(state)
-	if trackID == "" {
+	uri := currentTrackURI(state)
+	if uri == "" {
 		t.Skip("no current track")
 	}
 
-	resp := do(t, token, "PUT", "/api/spotify/me/tracks?ids="+trackID, nil)
+	resp := do(t, token, "PUT", "/api/spotify/me/library?uris="+uri, nil)
 	expectOK(t, resp, http.StatusOK)
-	t.Logf("liked track %s", trackID)
+	t.Logf("liked %s", uri)
 }
 
 func TestPlayback_Unlike(t *testing.T) {
 	token := MustGetToken()
 	state := playerState(t, token)
-	trackID := currentTrackSpotifyID(state)
-	if trackID == "" {
+	uri := currentTrackURI(state)
+	if uri == "" {
 		t.Skip("no current track")
 	}
 
-	resp := do(t, token, "DELETE", "/api/spotify/me/tracks?ids="+trackID, nil)
+	resp := do(t, token, "DELETE", "/api/spotify/me/library?uris="+uri, nil)
 	expectOK(t, resp, http.StatusOK)
-	t.Logf("unliked track %s", trackID)
+	t.Logf("unliked %s", uri)
 }
 
 func TestPlayback_ListQueue(t *testing.T) {
