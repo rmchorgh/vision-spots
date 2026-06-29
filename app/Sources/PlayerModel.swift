@@ -16,6 +16,10 @@ final class PlayerModel {
     var devices: [Device] = []
     var errorMessage: String?
 
+    /// True while the user is dragging the scrubber. Suppresses polling/local-tick overwrites
+    /// so the slider doesn't jump back to a stale position mid-drag.
+    var isSeeking = false
+
     init(service: any SpotifyService) {
         self.service = service
     }
@@ -23,8 +27,41 @@ final class PlayerModel {
     var hasTrack: Bool { state.track != nil }
 
     func refresh() async {
-        do { state = try await service.playbackState() }
+        do {
+            let fresh = try await service.playbackState()
+            // Don't clobber the user's in-progress drag with a polled snapshot.
+            guard !isSeeking else { return }
+            state = fresh
+        }
         catch { handle(error) }
+    }
+
+    /// Long-lived loop (started by `MainView`) that keeps the Now Playing bar fresh:
+    /// a full authoritative `refresh()` every ~3 s (so auto song-changes show up), and an
+    /// optimistic +1 s local progress tick on the off-seconds so the scrubber stays smooth.
+    /// Skipped entirely while the user is seeking. Exits when its `Task` is cancelled
+    /// (which happens when `MainView` disappears).
+    func startLivePlaybackUpdates() async {
+        await refresh()
+        var tick = 0
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { break }
+            guard !isSeeking else { tick += 1; continue }
+            tick += 1
+            if tick % 3 == 0 {
+                await refresh()                 // authoritative: catches auto track changes
+            } else if state.isPlaying {
+                state.progressMs += 1000         // optimistic local advance between polls
+            }
+        }
+    }
+
+    /// Optimistically moves the local progress, then asks the backend to seek.
+    func seek(toPositionMs ms: Int) async {
+        let clamped = max(0, ms)
+        state.progressMs = clamped
+        do { try await service.seek(toPositionMs: clamped) } catch { handle(error) }
     }
 
     func loadDevices() async {

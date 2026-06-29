@@ -101,6 +101,15 @@ enum MediaItem: Identifiable, Hashable {
     }
 }
 
+/// One page of a track listing (playlist or album). Backed by the backend's paginated
+/// `/api/playlists/:id/tracks` endpoint so a huge playlist isn't loaded all at once.
+struct TrackPage: Hashable {
+    var tracks: [Track]
+    var total: Int
+    /// Offset to request for the next page, or `nil` once the last page has been loaded.
+    var nextOffset: Int?
+}
+
 struct SearchResults: Hashable {
     var tracks: [Track] = []
     var albums: [Album] = []

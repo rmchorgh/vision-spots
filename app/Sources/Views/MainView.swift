@@ -36,16 +36,17 @@ struct MainView: View {
                 .padding(.bottom, 12)
         }
         .task {
-            await player.refresh()
             await player.loadDevices()
+            await player.startLivePlaybackUpdates()   // runs until this view disappears
         }
     }
 
-    /// Each tab gets its own navigation stack so playlists can push a detail view.
+    /// Each tab gets its own navigation stack so playlists and albums can push a detail view.
     private func stack<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         NavigationStack {
             content()
                 .navigationDestination(for: Playlist.self) { PlaylistDetailView(playlist: $0) }
+                .navigationDestination(for: Album.self) { AlbumDetailView(album: $0) }
         }
     }
 }

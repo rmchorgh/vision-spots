@@ -1,12 +1,12 @@
 import SwiftUI
 
-// MARK: - Playlist detail: header + track list, with a Play button
+// MARK: - Album detail: header + track list, with a Play button
 //
-// Tracks load incrementally: the first page arrives in `load()`, and more pages are appended
-// as the last visible row appears (`loadMore()`), so a huge playlist isn't fetched at once.
+// Mirrors PlaylistDetailView. Album-track listings omit per-track album art, so the album's
+// own artwork is passed to each row as a fallback. Tracks page in incrementally.
 
-struct PlaylistDetailView: View {
-    let playlist: Playlist
+struct AlbumDetailView: View {
+    let album: Album
 
     @Environment(AppModel.self) private var appModel
     @Environment(PlayerModel.self) private var player
@@ -34,31 +34,25 @@ struct PlaylistDetailView: View {
             .padding(28)
         }
         .lookToScroll()
-        .navigationTitle(playlist.name)
+        .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
 
     private var header: some View {
         HStack(alignment: .bottom, spacing: 24) {
-            Group {
-                if playlist.isLikedSongs {
-                    LikedSongsArtwork(heartFont: .system(size: 56))
-                } else {
-                    ArtworkView(url: playlist.artworkURL)
-                }
-            }
-            .frame(width: 200, height: 200)
-            .shadow(radius: 12, y: 8)
+            ArtworkView(url: album.artworkURL)
+                .frame(width: 200, height: 200)
+                .shadow(radius: 12, y: 8)
             VStack(alignment: .leading, spacing: 10) {
-                Text(playlist.isLikedSongs ? "Playlist · Liked Songs" : "Playlist")
+                Text("Album")
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(playlist.name).font(.extraLargeTitle2.weight(.bold))
-                Text(playlist.description).font(.callout).foregroundStyle(.secondary).lineLimit(2)
-                Text("\(playlist.ownerName) · \(playlist.trackCount) tracks")
+                Text(album.name).font(.extraLargeTitle2.weight(.bold))
+                Text(album.artistNames).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                Text("\(album.trackCount) tracks")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Button {
-                    Task { await player.play(contextURI: playlist.uri) }
+                    Task { await player.play(contextURI: album.uri) }
                 } label: {
                     Label("Play", systemImage: "play.fill").padding(.horizontal, 8)
                 }
@@ -76,7 +70,7 @@ struct PlaylistDetailView: View {
                 Button {
                     Task { await player.play(contextURI: track.uri) }
                 } label: {
-                    TrackRow(track: track, index: idx + 1)
+                    TrackRow(track: track, index: idx + 1, fallbackArtwork: album.artworkURL)
                 }
                 .buttonStyle(.plain)
                 .onAppear { if track.id == tracks.last?.id { Task { await loadMore() } } }
@@ -93,7 +87,7 @@ struct PlaylistDetailView: View {
     private func load() async {
         loadState = .loading
         do {
-            let page = try await appModel.service.playlistTracks(id: playlist.id, offset: 0, limit: pageSize)
+            let page = try await appModel.service.albumTracks(id: album.id, offset: 0, limit: pageSize)
             tracks = page.tracks
             nextOffset = page.nextOffset
             loadState = .loaded
@@ -107,11 +101,11 @@ struct PlaylistDetailView: View {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let page = try await appModel.service.playlistTracks(id: playlist.id, offset: offset, limit: pageSize)
+            let page = try await appModel.service.albumTracks(id: album.id, offset: offset, limit: pageSize)
             tracks.append(contentsOf: page.tracks)
             nextOffset = page.nextOffset
         } catch {
-            nextOffset = nil   // stop paging on error; keep what we have
+            nextOffset = nil
         }
     }
 }

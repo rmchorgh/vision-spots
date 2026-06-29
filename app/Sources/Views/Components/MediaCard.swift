@@ -2,13 +2,11 @@ import SwiftUI
 
 // MARK: - Reusable album / playlist card
 //
-// One component for both kinds of library item (see `MediaItem`). Playlists push a detail
-// view; albums start playback on tap. Used by the Home grid, Playlists grid, and search.
+// One component for both kinds of library item (see `MediaItem`). Both playlists and albums
+// push a detail view on tap. Used by the Home grid, Playlists grid, and search.
 
 struct MediaCard: View {
     let item: MediaItem
-
-    @Environment(PlayerModel.self) private var player
 
     var body: some View {
         switch item {
@@ -22,9 +20,7 @@ struct MediaCard: View {
             .buttonStyle(.plain)
 
         case .album(let album):
-            Button {
-                Task { await player.play(contextURI: album.uri) }
-            } label: {
+            NavigationLink(value: album) {
                 cardBody(artworkURL: album.artworkURL,
                          likedSongs: false,
                          title: album.name,
@@ -68,13 +64,14 @@ struct MediaCard: View {
                         }
                     }
                     .shadow(color: .black.opacity(0.6), radius: 4, y: 1)
-                    .padding(14)
+                    .padding(.all)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(radius: 8, y: 4)
             .hoverEffect()
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            
     }
 }
 

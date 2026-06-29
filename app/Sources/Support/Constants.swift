@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // MARK: - App configuration
 //
@@ -27,5 +28,21 @@ enum AppConfig {
     /// Factory used by the app entry point. Single source for the Mock ↔ Live decision.
     static func makeService() -> any SpotifyService {
         useLiveBackend ? LiveSpotifyService() : MockSpotifyService()
+    }
+}
+
+// MARK: - Look to Scroll (visionOS 26)
+//
+// Gaze-driven scrolling. The project targets visionOS 2.0, so the modifier is guarded and
+// compiles to a no-op on earlier systems.
+
+extension View {
+    @ViewBuilder
+    func lookToScroll() -> some View {
+        if #available(visionOS 26.0, *) {
+            scrollInputBehavior(.enabled, for: .look)
+        } else {
+            self
+        }
     }
 }

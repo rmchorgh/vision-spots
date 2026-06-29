@@ -14,7 +14,7 @@ struct HomeView: View {
     @State private var recent: [MediaItem] = []
     @State private var loadState: LoadState = .loading
 
-    private let columns = [GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 24)]
+    private let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
 
     var body: some View {
         ScrollView {
@@ -29,11 +29,12 @@ struct HomeView: View {
                 content
             }
         }
+        .lookToScroll()
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
-
+    
     private var content: some View {
         VStack(alignment: .leading, spacing: 36) {
             HStack(spacing: 24) {
@@ -112,8 +113,8 @@ private struct HeroCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .hoverEffect()
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     @ViewBuilder

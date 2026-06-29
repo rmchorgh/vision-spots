@@ -5,6 +5,8 @@ import SwiftUI
 struct TrackRow: View {
     let track: Track
     var index: Int? = nil
+    /// Artwork to show when the track itself has none (album-track listings omit album art).
+    var fallbackArtwork: URL? = nil
 
     var body: some View {
         HStack(spacing: 14) {
@@ -14,7 +16,7 @@ struct TrackRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .trailing)
             }
-            ArtworkView(url: track.artworkURL, cornerRadius: 6)
+            ArtworkView(url: track.artworkURL ?? fallbackArtwork, cornerRadius: 6)
                 .frame(width: 48, height: 48)
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.name).font(.body).lineLimit(1)
