@@ -40,8 +40,12 @@ struct SearchView: View {
                 Text("Songs").font(.title2.weight(.bold))
                 VStack(spacing: 0) {
                     ForEach(results.tracks) { track in
-                        TrackRow(track: track)
-                            .onTapGesture { Task { await player.play(contextURI: track.uri) } }
+                        Button {
+                            Task { await player.play(contextURI: track.uri) }
+                        } label: {
+                            TrackRow(track: track)
+                        }
+                        .buttonStyle(.plain)
                         Divider().opacity(track.id == results.tracks.last?.id ? 0 : 1)
                     }
                 }

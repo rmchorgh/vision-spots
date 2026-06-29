@@ -73,9 +73,13 @@ struct PlaylistDetailView: View {
     private var trackList: some View {
         VStack(spacing: 0) {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { idx, track in
-                TrackRow(track: track, index: idx + 1)
-                    .onTapGesture { Task { await player.play(contextURI: track.uri) } }
-                    .onAppear { if track.id == tracks.last?.id { Task { await loadMore() } } }
+                Button {
+                    Task { await player.play(contextURI: track.uri) }
+                } label: {
+                    TrackRow(track: track, index: idx + 1)
+                }
+                .buttonStyle(.plain)
+                .onAppear { if track.id == tracks.last?.id { Task { await loadMore() } } }
                 Divider().opacity(track.id == tracks.last?.id ? 0 : 1)
             }
             if isLoadingMore {
