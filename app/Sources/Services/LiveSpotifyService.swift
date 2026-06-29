@@ -423,6 +423,25 @@ private struct Paging<T: Decodable>: Decodable {
     let items: [T]?
     let total: Int?
     let next: String?
+
+    private enum CodingKeys: String, CodingKey { case items, total, next }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        total = try c.decodeIfPresent(Int.self, forKey: .total)
+        next = try c.decodeIfPresent(String.self, forKey: .next)
+        // Spotify's /v1/search returns `null` (and occasionally malformed) entries inside
+        // `items` — most often in playlists.items. Decode leniently so one bad element
+        // doesn't make the whole page (and thus the whole search) throw and come back empty.
+        items = try c.decodeIfPresent([FailableDecodable<T>].self, forKey: .items)?.compactMap(\.value)
+    }
+}
+
+/// Decodes `T` if possible, otherwise yields `nil` instead of throwing — lets an array
+/// tolerate null or malformed elements without discarding the entire array.
+private struct FailableDecodable<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
 }
 
 private struct SavedAlbumItem: Decodable { let album: AlbumDTO? }
