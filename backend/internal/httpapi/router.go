@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -44,8 +45,34 @@ func copyResponseHeaders(dst, src http.Header) {
 	}
 }
 
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(ww, r)
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
+			"status", ww.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
 func NewRouter(cfg *config.Config, store *session.Store) *chi.Mux {
 	r := chi.NewRouter()
+	r.Use(loggingMiddleware)
 
 	r.Get("/healthz", healthHandler)
 
@@ -284,6 +311,7 @@ func executeSpotifyRequest(cfg *config.Config, store *session.Store, sessionID s
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("spotify response", "method", req.Method, "url", req.URL.String(), "status", resp.StatusCode)
 	if resp.StatusCode != http.StatusUnauthorized {
 		return resp, nil
 	}
@@ -304,6 +332,7 @@ func executeSpotifyRequest(cfg *config.Config, store *session.Store, sessionID s
 		if current.RefreshToken == "" {
 			return nil, fmt.Errorf("spotify token expired and no refresh token is available (debug session?)")
 		}
+		slog.Info("spotify token refresh", "session", sessionID)
 		tr, err := spotify.RefreshToken(cfg, current.RefreshToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to refresh token: %w", err)
@@ -319,7 +348,12 @@ func executeSpotifyRequest(cfg *config.Config, store *session.Store, sessionID s
 	if len(bodyBytes) > 0 {
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
-	return spotify.Do(req, current.AccessToken)
+	resp, err = spotify.Do(req, current.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("spotify response (retry)", "method", req.Method, "url", req.URL.String(), "status", resp.StatusCode)
+	return resp, nil
 }
 
 func meHandler(cfg *config.Config, store *session.Store) http.HandlerFunc {
