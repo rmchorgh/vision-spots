@@ -16,7 +16,9 @@ struct ArtworkView: View {
             case .failure:
                 placeholder(systemImage: "music.note")
             case .empty:
-                placeholder(systemImage: nil)
+                // A real URL that's still loading gets a spinner; a nil URL (nothing playing)
+                // gets the static icon so the bar doesn't spin forever.
+                placeholder(systemImage: url == nil ? "music.note" : nil)
             @unknown default:
                 placeholder(systemImage: "music.note")
             }
